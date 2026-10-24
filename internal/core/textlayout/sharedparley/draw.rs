@@ -180,6 +180,13 @@ impl TextParagraph {
             // Padded for ink overhanging the advance, like the vertical filtering of lines.
             let padded_x_range = visible_x_range
                 .map(|x_range| (x_range.start - line_height)..(x_range.end + line_height));
+            let line_start = line
+                .items()
+                .find_map(|item| match item {
+                    parley::PositionedLayoutItem::GlyphRun(glyph_run) => Some(glyph_run.offset()),
+                    parley::PositionedLayoutItem::InlineBox(_) => None,
+                })
+                .unwrap_or_default();
             for item in line.items() {
                 match item {
                     parley::PositionedLayoutItem::GlyphRun(glyph_run) => {
@@ -200,6 +207,7 @@ impl TextParagraph {
                                 &glyph_run,
                                 vertically_truncated,
                                 metrics.trailing_whitespace,
+                                line_start,
                             );
 
                             Self::draw_glyph_run_with_selection(

@@ -293,3 +293,82 @@ fn test_max_lines_caps_height() {
     );
     assert_eq!(limited.height, first_line_bottom);
 }
+
+/// Every glyph run of the layout's first line, with what `glyphs_with_elision` keeps of it: the
+/// kept glyphs' left and right edges, and the ellipsis's left edge when the run carries it.
+fn elided_first_line(layout: &Layout) -> (Vec<(f32, f32)>, Vec<f32>) {
+    let line = layout.paragraphs[0].layout.lines().next().expect("a line");
+    let runs: Vec<_> = line
+        .items()
+        .filter_map(|item| match item {
+            parley::PositionedLayoutItem::GlyphRun(run) => Some(run),
+            parley::PositionedLayoutItem::InlineBox(_) => None,
+        })
+        .collect();
+    let line_start = runs.first().map(|run| run.offset()).unwrap_or_default();
+    let (mut kept, mut ellipses) = (Vec::new(), Vec::new());
+    for run in &runs {
+        let (glyphs, ellipsis) = layout.glyphs_with_elision(run, false, 0.0, line_start);
+        kept.extend(glyphs.map(|glyph| (glyph.x, glyph.x + glyph.advance)));
+        ellipses.extend(ellipsis.map(|(glyph, _, _)| glyph.x));
+    }
+    (kept, ellipses)
+}
+
+fn elided(text: &str, width: f32, horizontal_align: TextHorizontalAlignment) -> Layout {
+    let options = LayoutOptions {
+        max_width: Some(LogicalLength::new(width)),
+        text_overflow: TextOverflow::Elide,
+        horizontal_align,
+        ..Default::default()
+    };
+    layout_text_with_options(text, options)
+}
+
+#[test]
+fn an_overflowing_right_to_left_line_is_elided_on_the_left() {
+    // Parley keeps a right-to-left line's start at the box's right edge, so a line too long for
+    // its box starts left of zero; its glyphs used to be drawn there, over whatever stood left of
+    // the text, with no ellipsis.
+    let width = 60.0;
+    for align in [TextHorizontalAlignment::Right, TextHorizontalAlignment::Left] {
+        let layout = elided(
+            "\u{5d0}\u{5d1}\u{5d2} \u{5d3}\u{5d4}\u{5d5} \u{5d0}\u{5d1}\u{5d2} ABC-DEF-123",
+            width,
+            align,
+        );
+        let (kept, ellipses) = elided_first_line(&layout);
+        assert!(!kept.is_empty(), "{align:?}: some glyphs are kept");
+        for (left, right) in &kept {
+            assert!(
+                *left >= 0.0 && *right <= width + 0.5,
+                "{align:?}: a glyph at {left}..{right} is outside 0..{width}"
+            );
+        }
+        assert_eq!(ellipses.len(), 1, "{align:?}: one ellipsis");
+        let first = kept.iter().map(|(left, _)| *left).fold(f32::INFINITY, f32::min);
+        assert!(
+            ellipses[0] >= 0.0 && ellipses[0] < first,
+            "{align:?}: the ellipsis at {} is left of the text at {first}",
+            ellipses[0]
+        );
+    }
+}
+
+#[test]
+fn an_overflowing_left_to_right_line_is_elided_on_the_right() {
+    let width = 60.0;
+    let layout = elided("abcdef ghijkl mnopqr", width, TextHorizontalAlignment::Right);
+    let (kept, ellipses) = elided_first_line(&layout);
+    assert!(
+        kept.iter().all(|(left, right)| *left >= 0.0 && *right <= width),
+        "glyphs inside the box: {kept:?}"
+    );
+    assert_eq!(ellipses.len(), 1, "one ellipsis");
+    let last = kept.iter().map(|(_, right)| *right).fold(0.0, f32::max);
+    assert!(
+        ellipses[0] >= last - 0.5,
+        "the ellipsis at {} follows the text ending at {last}",
+        ellipses[0]
+    );
+}
