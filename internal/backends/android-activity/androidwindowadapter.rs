@@ -283,14 +283,33 @@ impl AndroidWindowAdapter {
             let mut result = Ok(());
             let read_input = iter.next(|event| match event {
                 InputEvent::KeyEvent(key_event) => match map_key_event(&self.app, key_event) {
-                    Some(ev) => match self.window.dispatch_event_with_result(ev) {
-                        Ok(WindowEventDispatchResult::Accepted) => InputStatus::Handled,
-                        Ok(_) => InputStatus::Unhandled,
-                        Err(e) => {
-                            result = Err(e);
-                            InputStatus::Unhandled
+                    Some(ev) => {
+                        let back: SharedString = Key::Back.into();
+                        let back = matches!(&ev, WindowEvent::KeyPressed { text } if *text == back);
+                        match self.window.dispatch_event_with_result(ev) {
+                            Ok(WindowEventDispatchResult::Accepted) => InputStatus::Handled,
+                            // A Back that no element takes, such as when nothing has the focus,
+                            // is the window's close request, as a desktop window's close button
+                            // is. Android finishes the activity only if the window lets itself
+                            // close.
+                            Ok(_) if back => match self
+                                .window
+                                .dispatch_event_with_result(WindowEvent::CloseRequested)
+                            {
+                                Ok(WindowEventDispatchResult::Rejected) => InputStatus::Handled,
+                                Ok(_) => InputStatus::Unhandled,
+                                Err(e) => {
+                                    result = Err(e);
+                                    InputStatus::Unhandled
+                                }
+                            },
+                            Ok(_) => InputStatus::Unhandled,
+                            Err(e) => {
+                                result = Err(e);
+                                InputStatus::Unhandled
+                            }
                         }
-                    },
+                    }
                     None => InputStatus::Unhandled,
                 },
                 InputEvent::MotionEvent(motion_event) => {
