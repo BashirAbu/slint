@@ -282,7 +282,7 @@ impl AndroidWindowAdapter {
         loop {
             let mut result = Ok(());
             let read_input = iter.next(|event| match event {
-                InputEvent::KeyEvent(key_event) => match map_key_event(key_event) {
+                InputEvent::KeyEvent(key_event) => match map_key_event(&self.app, key_event) {
                     Some(ev) => match self.window.dispatch_event_with_result(ev) {
                         Ok(WindowEventDispatchResult::Accepted) => InputStatus::Handled,
                         Ok(_) => InputStatus::Unhandled,
@@ -689,8 +689,11 @@ fn button_for_event(
     return PointerEventButton::Other;
 }
 
-fn map_key_event(key_event: &android_activity::input::KeyEvent) -> Option<WindowEvent> {
-    let text = map_key_code(key_event.key_code())?;
+fn map_key_event(
+    app: &AndroidApp,
+    key_event: &android_activity::input::KeyEvent,
+) -> Option<WindowEvent> {
+    let text = typed_text(app, key_event).or_else(|| map_key_code(key_event.key_code()))?;
     let repeat = key_event.repeat_count() > 0;
     match key_event.action() {
         KeyAction::Down if repeat => Some(WindowEvent::KeyPressRepeated { text }),
@@ -698,6 +701,20 @@ fn map_key_event(key_event: &android_activity::input::KeyEvent) -> Option<Window
         KeyAction::Up => Some(WindowEvent::KeyReleased { text }),
         KeyAction::Multiple if repeat => Some(WindowEvent::KeyPressRepeated { text }),
         KeyAction::Multiple => Some(WindowEvent::KeyPressed { text }),
+        _ => None,
+    }
+}
+
+/// The character a key types together with its modifiers, from the device's key character map:
+/// Shift with `;` types `:`, Shift with `a` types `A`. Keys that type nothing printable (arrows,
+/// Enter, Shift itself) fall back to `map_key_code`.
+fn typed_text(
+    app: &AndroidApp,
+    key_event: &android_activity::input::KeyEvent,
+) -> Option<SharedString> {
+    let map = app.device_key_character_map(key_event.device_id()).ok()?;
+    match map.get(key_event.key_code(), key_event.meta_state()).ok()? {
+        android_activity::input::KeyMapChar::Unicode(c) if !c.is_control() => Some(c.into()),
         _ => None,
     }
 }
