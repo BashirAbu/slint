@@ -1212,6 +1212,11 @@ fn build(l: &mut Loader) {
         in property <TextVerticalAlignment> vertical-alignment;
         /// A callback that's invoked when a link in the text is clicked. The parameter contains the clicked link as a string.
         callback link-clicked(link: string);
+        /// The link under the pointer, or an empty string when the pointer isn't over a link.
+        out property <string> hovered-link;
+        /// A callback that's invoked when a pointer button is pressed or released over a link in the text, with the `PointerEvent`: its button, its kind and the keyboard's modifiers.
+        /// The link is in `hovered-link`. Use it for what a plain click doesn't cover, such as a middle click or a right click on a link. A plain click still invokes `link-clicked` too.
+        callback link-pointer-event(event: PointerEvent);
     } }
 
     element! {

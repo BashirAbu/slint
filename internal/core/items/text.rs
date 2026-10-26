@@ -10,9 +10,9 @@ Lookup the [`crate::items`] module documentation.
 */
 use super::{
     EventResult, FontMetrics, InputMethodHints, InputType, Item, ItemConsts, ItemRc, ItemRef,
-    KeyEventArg, KeyEventResult, KeyEventType, PointArg, PointerEventButton, RenderingResult,
-    StringArg, TextHorizontalAlignment, TextOverflow, TextStrokeStyle, TextVerticalAlignment,
-    TextWrap, VoidArg,
+    KeyEventArg, KeyEventResult, KeyEventType, PointArg, PointerEvent, PointerEventArg,
+    PointerEventButton, PointerEventKind, RenderingResult, StringArg, TextHorizontalAlignment,
+    TextOverflow, TextStrokeStyle, TextVerticalAlignment, TextWrap, VoidArg,
 };
 use crate::graphics::{Brush, Color, FontRequest};
 use crate::input::{
@@ -248,6 +248,8 @@ pub struct StyledTextItem {
     pub vertical_alignment: Property<TextVerticalAlignment>,
     pub max_lines: Property<i32>,
     pub link_clicked: Callback<StringArg>,
+    pub hovered_link: Property<SharedString>,
+    pub link_pointer_event: Callback<PointerEventArg>,
     pub link_color: Property<Color>,
     pub cached_rendering_data: CachedRenderingData,
 }
@@ -306,28 +308,46 @@ impl Item for StyledTextItem {
                 None,
             )
         };
+        let hovered_link = Self::FIELD_OFFSETS.hovered_link().apply_pin(self);
         match event {
             #[cfg(feature = "shared-parley")]
-            MouseEvent::Released {
-                position,
-                button: PointerEventButton::Left,
-                click_count: _,
-                touch_finger_id: _,
-            } => {
-                if let Some(link) = find_link(position) {
+            MouseEvent::Pressed { position, button, touch_finger_id, .. }
+            | MouseEvent::Released { position, button, touch_finger_id, .. } => {
+                let link = find_link(position).map(SharedString::from);
+                hovered_link.set(link.clone().unwrap_or_default());
+                if let Some(link) = link {
                     *cursor = super::MouseCursorInner::BuiltIn(super::BuiltInMouseCursor::Pointer);
-                    Self::FIELD_OFFSETS.link_clicked().apply_pin(self).call(&(link.into(),));
+                    let released = matches!(event, MouseEvent::Released { .. });
+                    Self::FIELD_OFFSETS.link_pointer_event().apply_pin(self).call(&(
+                        PointerEvent {
+                            button: *button,
+                            kind: if released {
+                                PointerEventKind::Up
+                            } else {
+                                PointerEventKind::Down
+                            },
+                            modifiers: window_adapter.window().0.context().0.modifiers.get().into(),
+                            touch_finger_id: *touch_finger_id,
+                        },
+                    ));
+                    if released && *button == PointerEventButton::Left {
+                        Self::FIELD_OFFSETS.link_clicked().apply_pin(self).call(&(link,));
+                    }
                 }
                 InputEventResult::EventAccepted
             }
             #[cfg(feature = "shared-parley")]
-            MouseEvent::Moved { position, .. }
-            | MouseEvent::Pressed { position, .. }
-            | MouseEvent::Released { position, .. } => {
-                if find_link(position).is_some() {
+            MouseEvent::Moved { position, .. } => {
+                let link = find_link(position).map(SharedString::from);
+                if link.is_some() {
                     *cursor = super::MouseCursorInner::BuiltIn(super::BuiltInMouseCursor::Pointer);
                 }
+                hovered_link.set(link.unwrap_or_default());
                 InputEventResult::EventAccepted
+            }
+            MouseEvent::Exit => {
+                hovered_link.set(SharedString::default());
+                InputEventResult::EventIgnored
             }
             _ => InputEventResult::EventIgnored,
         }
