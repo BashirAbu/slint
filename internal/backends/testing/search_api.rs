@@ -888,14 +888,16 @@ impl ElementHandle {
             .unwrap_or_default()
     }
 
-    /// Returns the position of the element within the entire window. This corresponds to the value of the
+    /// Returns the position of the element within the entire window, where input events at it are
+    /// dispatched: for an element of a popup that's rendered inside the window, such as a menu, this
+    /// includes the location of the popup. Elsewhere it corresponds to the value of the
     /// `absolute-position` property in Slint code. Returns a zero position if the element is not valid.
     pub fn absolute_position(&self) -> i_slint_core::api::LogicalPosition {
         self.item
             .upgrade()
             .map(|item| {
                 let g = item.geometry();
-                let p = item.map_to_window(g.origin);
+                let p = item.map_to_native_window(g.origin);
                 i_slint_core::lengths::logical_position_to_api(p)
             })
             .unwrap_or_default()
@@ -1093,9 +1095,9 @@ impl ElementHandle {
         mock_drag_window(window_adapter.window(), self.absolute_center(), target, button);
     }
 
-    /// The center of the element in the coordinate system that input events are dispatched in.
-    /// Unlike [`Self::absolute_position()`] this includes the location of an enclosing popup that's
-    /// rendered inside the window, such as a menu.
+    /// The center of the element in the coordinate system that input events are dispatched in, as
+    /// [`Self::absolute_position()`] has it: the location of an enclosing popup that's rendered inside
+    /// the window, such as a menu, included.
     pub(crate) fn absolute_center(&self) -> LogicalPosition {
         let Some(item) = self.item.upgrade() else {
             return Default::default();
@@ -1483,6 +1485,51 @@ fn test_popups() {
             .collect::<Vec<_>>(),
         ["Nested", "Ok"]
     );
+}
+
+#[test]
+fn test_absolute_position_in_popup() {
+    crate::init_no_event_loop();
+
+    slint::slint! {
+        export component App inherits Window {
+            width: 300px;
+            height: 300px;
+            popup := PopupWindow {
+                x: 40px;
+                y: 60px;
+                width: 100px;
+                height: 100px;
+                inner := Rectangle {
+                    x: 10px;
+                    y: 20px;
+                    width: 30px;
+                    height: 30px;
+                    accessible-role: button;
+                }
+            }
+            opener := TouchArea {
+                accessible-role: button;
+                accessible-action-default => {
+                    popup.show();
+                }
+            }
+        }
+    }
+
+    let app = App::new().unwrap();
+    let root = app.root_element();
+    root.query_descendants()
+        .match_id("App::opener")
+        .find_first()
+        .unwrap()
+        .invoke_accessible_default_action();
+    let inner = root.query_descendants().match_id("App::inner").find_first().unwrap();
+
+    // Within the whole window, where a pointer event at it lands: the popup's place in it included,
+    // as the element's center has it.
+    assert_eq!(inner.absolute_position(), LogicalPosition::new(50., 80.));
+    assert_eq!(inner.absolute_center(), LogicalPosition::new(65., 95.));
 }
 
 #[test]
