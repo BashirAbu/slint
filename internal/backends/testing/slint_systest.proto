@@ -386,6 +386,8 @@ message ElementPropertiesResponse {
     bool accessible_checked = 8;
     bool accessible_checkable = 9;
     LogicalSize size = 10;
+    // Where the window draws the element, an enclosing popup's location included: input
+    // aimed there reaches it.
     LogicalPosition absolute_position = 11;
     AccessibleRole accessible_role = 12;
     float computed_opacity = 13;

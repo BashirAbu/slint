@@ -694,7 +694,7 @@ pub(crate) fn element_properties(element: &ElementHandle) -> proto::ElementPrope
             Some(proto::LogicalSize { width: sz.width, height: sz.height })
         },
         absolute_position: {
-            let pos = element.absolute_position();
+            let pos = element.position_in_window();
             Some(proto::LogicalPosition { x: pos.x, y: pos.y })
         },
         accessible_role: convert_to_proto_accessible_role(

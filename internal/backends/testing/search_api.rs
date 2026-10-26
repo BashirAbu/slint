@@ -1093,9 +1093,23 @@ impl ElementHandle {
         mock_drag_window(window_adapter.window(), self.absolute_center(), target, button);
     }
 
+    /// Returns the position of the element in the coordinate system that input events are
+    /// dispatched in: where the window draws it.
+    /// Unlike [`Self::absolute_position()`], this includes the location of an enclosing popup
+    /// that's rendered inside the window, such as a menu or a combo box's list.
+    /// Use it to aim input at the element from outside the application.
+    /// Returns a zero position if the element is not valid.
+    pub fn position_in_window(&self) -> LogicalPosition {
+        let Some(item) = self.item.upgrade() else {
+            return Default::default();
+        };
+        i_slint_core::lengths::logical_position_to_api(
+            item.map_to_native_window(item.geometry().origin),
+        )
+    }
+
     /// The center of the element in the coordinate system that input events are dispatched in.
-    /// Unlike [`Self::absolute_position()`] this includes the location of an enclosing popup that's
-    /// rendered inside the window, such as a menu.
+    /// See [`Self::position_in_window()`].
     pub(crate) fn absolute_center(&self) -> LogicalPosition {
         let Some(item) = self.item.upgrade() else {
             return Default::default();
@@ -1483,6 +1497,48 @@ fn test_popups() {
             .collect::<Vec<_>>(),
         ["Nested", "Ok"]
     );
+}
+
+#[test]
+fn test_popup_element_position_in_window() {
+    crate::init_no_event_loop();
+
+    slint::slint! {
+        export component App inherits Window {
+            width: 300px;
+            height: 300px;
+            popup := PopupWindow {
+                x: 40px;
+                y: 60px;
+                width: 100px;
+                height: 100px;
+                inside := Rectangle {
+                    x: 10px;
+                    y: 20px;
+                    width: 30px;
+                    height: 30px;
+                    accessible-role: button;
+                }
+            }
+            opener := TouchArea {
+                accessible-role: button;
+                accessible-action-default => {
+                    popup.show();
+                }
+            }
+        }
+    }
+
+    let app = App::new().unwrap();
+    let root = app.root_element();
+    root.query_descendants()
+        .match_id("App::opener")
+        .find_first()
+        .unwrap()
+        .invoke_accessible_default_action();
+    let inside = root.query_descendants().match_id("App::inside").find_first().unwrap();
+    assert_eq!(inside.absolute_position(), LogicalPosition::new(10., 20.));
+    assert_eq!(inside.position_in_window(), LogicalPosition::new(50., 80.));
 }
 
 #[test]
