@@ -1,0 +1,66 @@
+// Copyright © BashirAbu
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A focused item already in view is revealed without moving the content, when it gains the focus
+// and when the window is resized: the Flickable's content position keeps its binding.
+
+export component TestCase inherits Window {
+    width: 200px;
+    height: 200px;
+    in-out property <length> rest: -100px;
+
+    f := Flickable {
+        width: parent.width;
+        height: parent.height;
+        content-width: 400px;
+        content-height: 200px;
+        content-x: root.rest;
+        fs := FocusScope {
+            x: 150px;
+            y: 50px;
+            width: 20px;
+            height: 20px;
+        }
+    }
+
+    public function set-focus() {
+        fs.focus();
+    }
+    out property <length> offset-x: -f.content-x;
+
+    // Focused while in view, then bound elsewhere: the content follows the binding.
+    in-out property <bool> moved;
+    init => {
+        fs.focus();
+        root.rest = -50px;
+        root.moved = -f.content-x == 50px;
+    }
+    out property <bool> test: root.moved;
+}
+
+/*
+```rust
+use slint::{LogicalSize, platform::WindowEvent};
+let instance = TestCase::new().unwrap();
+assert!(instance.get_test());
+instance.set_rest(-100.);
+instance.invoke_set_focus();
+assert_eq!(instance.get_offset_x(), 100.);
+instance.window().dispatch_event(WindowEvent::Resized { size: LogicalSize::new(190., 190.) });
+assert_eq!(instance.get_offset_x(), 100.);
+// The binding still holds: the content follows what it is bound to.
+instance.set_rest(-50.);
+assert_eq!(instance.get_offset_x(), 50.);
+```
+
+```cpp
+auto handle = TestCase::create();
+const TestCase &instance = *handle;
+assert(instance.get_test());
+instance.set_rest(-100.);
+instance.invoke_set_focus();
+assert_eq(instance.get_offset_x(), 100.);
+instance.set_rest(-50.);
+assert_eq(instance.get_offset_x(), 50.);
+```
+*/

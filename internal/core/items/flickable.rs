@@ -328,11 +328,14 @@ impl Flickable {
         let tx = Self::choose_min_move(cx, geo.width(), cw, pts.iter().map(|p| p.x));
         let ty = Self::choose_min_move(cy, geo.height(), ch, pts.iter().map(|p| p.y));
 
-        let new_cx = cx + tx;
-        let new_cy = cy + ty;
-
-        Self::FIELD_OFFSETS.content_x().apply_pin(self).set(euclid::Length::new(-new_cx));
-        Self::FIELD_OFFSETS.content_y().apply_pin(self).set(euclid::Length::new(-new_cy));
+        // An axis that needs no move is left as it was, so a binding of its content position (a
+        // right-to-left grid resting at its right end) still holds.
+        if tx != 0 as Coord {
+            Self::FIELD_OFFSETS.content_x().apply_pin(self).set(euclid::Length::new(-(cx + tx)));
+        }
+        if ty != 0 as Coord {
+            Self::FIELD_OFFSETS.content_y().apply_pin(self).set(euclid::Length::new(-(cy + ty)));
+        }
     }
 
     fn geometry_without_virtual_keyboard(self_rc: &ItemRc) -> LogicalRect {
