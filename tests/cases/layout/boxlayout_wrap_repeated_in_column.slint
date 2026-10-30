@@ -1,0 +1,67 @@
+// Copyright © BashirAbu
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A centred row holding a column of at most 200px around a wrapping text is as tall as the text's
+// lines at that width. Behind an `if` the row is a repeated instance, measured the same way: it was
+// measured as if the text stood on one line, and the next element was drawn over the row's
+// content.
+
+component Middle inherits HorizontalLayout {
+    alignment: center;
+    padding-left: 16px;
+    padding-right: 16px;
+    VerticalLayout {
+        preferred-width: 200px;
+        max-width: 200px;
+        @children
+    }
+}
+
+export component TestCase inherits Window {
+    width: 600px;
+    height: 600px;
+    in property <bool> shown: true;
+    VerticalLayout {
+        alignment: start;
+        plain := Middle {
+            plain-text := Text {
+                wrap: word-wrap;
+                text: "Some words that need more than one line at two hundred pixels wide";
+            }
+        }
+        if root.shown: conditional := Middle {
+            Text {
+                wrap: word-wrap;
+                text: "Some words that need more than one line at two hundred pixels wide";
+            }
+        }
+        after := Rectangle { height: 10px; }
+        Rectangle { }
+    }
+    out property <length> plain-h: plain.height;
+    out property <length> text-h: plain-text.height;
+    out property <length> after-y: after.y;
+    // The plain row and the conditional one are each as tall as the text's lines.
+    out property <bool> test: plain.height == plain-text.height && after.y == 2 * plain-text.height;
+}
+
+/*
+```rust
+let instance = TestCase::new().unwrap();
+assert!(instance.get_text_h() > 20., "the text wraps onto several lines: {}", instance.get_text_h());
+assert_eq!(instance.get_plain_h(), instance.get_text_h());
+assert_eq!(instance.get_after_y(), 2. * instance.get_text_h(), "the conditional row as tall as the plain one");
+assert!(instance.get_test());
+```
+
+```cpp
+auto handle = TestCase::create();
+const TestCase &instance = *handle;
+assert(instance.get_test());
+```
+
+```js
+var instance = new slint.TestCase();
+assert(instance.test);
+```
+*/

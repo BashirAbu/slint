@@ -1226,6 +1226,12 @@ fn optimize_single_cell_layout(
         }) else {
             continue;
         };
+        // A cell whose height follows its width keeps the runtime computation: the closed form reads
+        // the cell's height, which `layoutinfo-v-with-constraint` would then ask for at the layout's
+        // whole width, past its padding and the cell's own limits.
+        if o == Orientation::Vertical && height_follows_width(cell) {
+            continue;
+        }
         let Some(info) =
             single_cell_layout_info_binding(layout, &layout.elems[0], o, single_cell.stretch)
         else {
@@ -1235,6 +1241,35 @@ fn optimize_single_cell_layout(
             *binding.expression.ignore_debug_hooks_mut() = info;
         }
     }
+}
+
+/// Whether `elem`'s height follows its width anywhere under it, as the walk of
+/// [`synthesize_layoutinfo_v_with_constraint`] finds it: a height-for-width built-in, a
+/// FlexboxLayout that may run in rows, or a component that measures at a width.
+fn height_follows_width(elem: &ElementRc) -> bool {
+    let e = elem.borrow();
+    if e.is_builtin_height_for_width() {
+        return true;
+    }
+    let row_flexbox = matches!(
+        e.debug.first().and_then(|d| d.layout.as_ref()),
+        Some(crate::layout::Layout::FlexboxLayout(l))
+            if !matches!(
+                l.axis_relation(Orientation::Vertical),
+                crate::layout::FlexboxAxisRelation::MainAxis
+            )
+    );
+    let base = match &e.base_type {
+        ElementType::Component(base) => Some(base.root_element.clone()),
+        _ => None,
+    };
+    let children = e.children.clone();
+    drop(e);
+    row_flexbox
+        || base.is_some_and(|root| {
+            root.borrow().layout_info_v_with_constraint.is_some() || height_follows_width(&root)
+        })
+        || children.iter().any(height_follows_width)
 }
 
 /// Compile-time solution for a box layout with a single non-repeated cell and
