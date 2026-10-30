@@ -1488,10 +1488,12 @@ fn public_properties(
         .collect()
 }
 
-/// The width a box or grid layout lays out a repeated root at, when the root is a row
-/// FlexboxLayout, whose height then depends on its width: the layout's horizontal pass sets
-/// that width from the cells' horizontal info alone, so reading it closes no loop. `None` for
-/// any other root, and for a flex item, whose width the flex sets from its height.
+/// The width a box or grid layout lays out a repeated root at, when the root is a FlexboxLayout
+/// that may run in rows (its direction a row, or known only at run time, as the synthesis of
+/// `layoutinfo-v-with-constraint` takes it), whose height then depends on its width: the
+/// layout's horizontal pass sets that width from the cells' horizontal info alone, so reading it
+/// closes no loop. `None` for any other root, and for a flex item, whose width the flex sets
+/// from its height.
 fn laid_out_width_of_repeated_row_flexbox(root: &ElementRc) -> Option<tree_Expression> {
     let root = root.borrow();
     let laid_out_by_box_or_grid = !root.child_of_flexbox
@@ -1499,9 +1501,9 @@ fn laid_out_width_of_repeated_row_flexbox(root: &ElementRc) -> Option<tree_Expre
     let row_flexbox = matches!(
         root.debug.first().and_then(|d| d.layout.as_ref()),
         Some(crate::layout::Layout::FlexboxLayout(l))
-            if matches!(
+            if !matches!(
                 l.axis_relation(crate::layout::Orientation::Vertical),
-                crate::layout::FlexboxAxisRelation::CrossAxis
+                crate::layout::FlexboxAxisRelation::MainAxis
             )
     );
     let width = root.geometry_props.as_ref()?.width.clone();

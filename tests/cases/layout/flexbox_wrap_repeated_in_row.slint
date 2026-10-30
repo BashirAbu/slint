@@ -4,7 +4,8 @@
 // A wrapping FlexboxLayout that stretches in a HorizontalLayout takes the width the row gives it,
 // and the row is as tall as the lines the flexbox needs at that width. Behind an `if` the flexbox is
 // a repeated instance, measured at that width too: at its preferred width, its compact
-// arrangement, the row counted a line per item too many.
+// arrangement, the row counted a line per item too many. A direction known only at run time
+// (`row-reverse` for right-to-left) is measured alike.
 
 component Item inherits VerticalLayout {
     in property <int> kind;
@@ -16,6 +17,7 @@ export component TestCase inherits Window {
     width: 600px;
     height: 600px;
     in property <bool> hidden: false;
+    in property <bool> reversed: false;
     in-out property <length> room: 600px;
     VerticalLayout {
         alignment: start;
@@ -56,22 +58,40 @@ export component TestCase inherits Window {
                 Rectangle { width: 50px; height: 30px; }
             }
         }
+        runtime := HorizontalLayout {
+            spacing: 8px;
+            if !root.hidden: FlexboxLayout {
+                horizontal-stretch: 1;
+                flex-direction: root.reversed ? FlexboxLayoutDirection.row-reverse : FlexboxLayoutDirection.row;
+                spacing: 8px;
+                for i in 3: Rectangle { width: 150px; height: 30px; }
+            }
+            VerticalLayout {
+                alignment: start;
+                Rectangle { width: 50px; height: 30px; }
+            }
+        }
         Rectangle { }
     }
     out property <length> plain-h: plain.height;
     out property <length> conditional-h: conditional.height;
     out property <length> items-h: items.height;
-    out property <bool> test: plain.height == 30px && conditional.height == 30px && items.height == 30px;
+    out property <length> runtime-h: runtime.height;
+    out property <bool> test: plain.height == 30px && conditional.height == 30px && items.height == 30px && runtime.height == 30px;
 }
 
 /*
 ```rust
 let instance = TestCase::new().unwrap();
 assert_eq!((instance.get_plain_h(), instance.get_conditional_h(), instance.get_items_h()), (30., 30., 30.));
+assert_eq!(instance.get_runtime_h(), 30.);
 assert!(instance.get_test());
+instance.set_reversed(true);
+assert_eq!(instance.get_runtime_h(), 30.);
 // In a narrow row each line holds one item: three lines and two gaps.
 instance.set_room(300.);
 assert_eq!((instance.get_plain_h(), instance.get_conditional_h(), instance.get_items_h()), (106., 106., 106.));
+assert_eq!(instance.get_runtime_h(), 106.);
 ```
 
 ```cpp
@@ -79,6 +99,7 @@ auto handle = TestCase::create();
 const TestCase &instance = *handle;
 assert_eq(instance.get_conditional_h(), 30.);
 assert_eq(instance.get_items_h(), 30.);
+assert_eq(instance.get_runtime_h(), 30.);
 assert(instance.get_test());
 handle->set_room(300.);
 assert_eq(instance.get_plain_h(), 106.);
@@ -90,6 +111,7 @@ assert_eq(instance.get_items_h(), 106.);
 var instance = new slint.TestCase();
 assert.equal(instance.conditional_h, 30);
 assert.equal(instance.items_h, 30);
+assert.equal(instance.runtime_h, 30);
 assert(instance.test);
 instance.room = 300;
 assert.equal(instance.conditional_h, 106);
