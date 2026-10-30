@@ -1,0 +1,97 @@
+// Copyright © BashirAbu
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A wrapping FlexboxLayout that stretches in a HorizontalLayout takes the width the row gives it,
+// and the row is as tall as the lines the flexbox needs at that width. Behind an `if` the flexbox is
+// a repeated instance, measured at that width too: at its preferred width, its compact
+// arrangement, the row counted a line per item too many.
+
+component Item inherits VerticalLayout {
+    in property <int> kind;
+    if root.kind == 0: Rectangle { min-height: 30px; preferred-height: 30px; }
+    if root.kind == 1: Rectangle { height: 30px; }
+}
+
+export component TestCase inherits Window {
+    width: 600px;
+    height: 600px;
+    in property <bool> hidden: false;
+    in-out property <length> room: 600px;
+    VerticalLayout {
+        alignment: start;
+        width: root.room;
+        plain := HorizontalLayout {
+            spacing: 8px;
+            FlexboxLayout {
+                horizontal-stretch: 1;
+                spacing: 8px;
+                for i in 3: Rectangle { width: 150px; height: 30px; }
+            }
+            VerticalLayout {
+                alignment: start;
+                Rectangle { width: 50px; height: 30px; }
+            }
+        }
+        conditional := HorizontalLayout {
+            spacing: 8px;
+            if !root.hidden: FlexboxLayout {
+                horizontal-stretch: 1;
+                spacing: 8px;
+                for i in 3: Rectangle { width: 150px; height: 30px; }
+            }
+            VerticalLayout {
+                alignment: start;
+                Rectangle { width: 50px; height: 30px; }
+            }
+        }
+        items := HorizontalLayout {
+            spacing: 8px;
+            if !root.hidden: FlexboxLayout {
+                horizontal-stretch: 1;
+                spacing: 8px;
+                for i in [0, 1, 1]: Item { width: 150px; kind: i; }
+            }
+            VerticalLayout {
+                alignment: start;
+                Rectangle { width: 50px; height: 30px; }
+            }
+        }
+        Rectangle { }
+    }
+    out property <length> plain-h: plain.height;
+    out property <length> conditional-h: conditional.height;
+    out property <length> items-h: items.height;
+    out property <bool> test: plain.height == 30px && conditional.height == 30px && items.height == 30px;
+}
+
+/*
+```rust
+let instance = TestCase::new().unwrap();
+assert_eq!((instance.get_plain_h(), instance.get_conditional_h(), instance.get_items_h()), (30., 30., 30.));
+assert!(instance.get_test());
+// In a narrow row each line holds one item: three lines and two gaps.
+instance.set_room(300.);
+assert_eq!((instance.get_plain_h(), instance.get_conditional_h(), instance.get_items_h()), (106., 106., 106.));
+```
+
+```cpp
+auto handle = TestCase::create();
+const TestCase &instance = *handle;
+assert_eq(instance.get_conditional_h(), 30.);
+assert_eq(instance.get_items_h(), 30.);
+assert(instance.get_test());
+handle->set_room(300.);
+assert_eq(instance.get_plain_h(), 106.);
+assert_eq(instance.get_conditional_h(), 106.);
+assert_eq(instance.get_items_h(), 106.);
+```
+
+```js
+var instance = new slint.TestCase();
+assert.equal(instance.conditional_h, 30);
+assert.equal(instance.items_h, 30);
+assert(instance.test);
+instance.room = 300;
+assert.equal(instance.conditional_h, 106);
+```
+*/

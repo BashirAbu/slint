@@ -743,14 +743,21 @@ fn lower_sub_component(
     )
     .into();
     // Measure the root's height for its preferred width, not an unbounded one, so a
-    // height-for-width Image doesn't report infinite height (mirrors the interpreter).
+    // height-for-width Image doesn't report infinite height (mirrors the interpreter). A
+    // wrapping row FlexboxLayout that a box or grid layout repeats is measured at the width
+    // that layout gives it, as a static one is: at its preferred width, its compact
+    // arrangement, it counted a line per item too many.
     let v_cross_constraint = component
         .root_element
         .borrow()
         .layout_info_v_with_constraint
         .is_some()
         .then(|| {
-            super::lower_layout_expression::default_cross_axis_constraint(&component.root_element)
+            laid_out_width_of_repeated_row_flexbox(&component.root_element).or_else(|| {
+                super::lower_layout_expression::default_cross_axis_constraint(
+                    &component.root_element,
+                )
+            })
         })
         .flatten();
     sub_component.layout_info_v = super::lower_layout_expression::get_layout_info(
@@ -1479,4 +1486,24 @@ fn public_properties(
             )
         })
         .collect()
+}
+
+/// The width a box or grid layout lays out a repeated root at, when the root is a row
+/// FlexboxLayout, whose height then depends on its width: the layout's horizontal pass sets
+/// that width from the cells' horizontal info alone, so reading it closes no loop. `None` for
+/// any other root, and for a flex item, whose width the flex sets from its height.
+fn laid_out_width_of_repeated_row_flexbox(root: &ElementRc) -> Option<tree_Expression> {
+    let root = root.borrow();
+    let laid_out_by_box_or_grid = !root.child_of_flexbox
+        && (root.parent_box_layout_orientation.is_some() || root.grid_layout_cell.is_some());
+    let row_flexbox = matches!(
+        root.debug.first().and_then(|d| d.layout.as_ref()),
+        Some(crate::layout::Layout::FlexboxLayout(l))
+            if matches!(
+                l.axis_relation(crate::layout::Orientation::Vertical),
+                crate::layout::FlexboxAxisRelation::CrossAxis
+            )
+    );
+    let width = root.geometry_props.as_ref()?.width.clone();
+    (laid_out_by_box_or_grid && row_flexbox).then(|| tree_Expression::PropertyReference(width))
 }
