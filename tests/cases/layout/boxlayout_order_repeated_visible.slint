@@ -1,0 +1,129 @@
+// Copyright © BashirAbu
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A repeated cell whose `visible` is bound is wrapped in an injected element that becomes the
+// repeated element. Its `layout-order` and `cross-axis-self-alignment` are linked onto that
+// wrapper and must still reach the solve whatever the cell is named: the cell's own are moved onto
+// the wrapper as `<id>-<property>`, and an id sorting before the property's name once took the
+// wrapper's away.
+
+component Inner inherits Rectangle {
+    // Named as the cells below are; any id sorting before `layout-order` did the same.
+    box := Rectangle { }
+}
+
+component Cell inherits Rectangle {
+    in property <bool> shown: true;
+    visible: root.shown;
+    HorizontalLayout {
+        @children
+    }
+}
+
+// Each row reads C B A: its repeated cells (orders -2 and -1) before its static one (0), declared
+// first.
+component RowNamedAsInner inherits Rectangle {
+    out property <length> static-x: s.x;
+    width: 300px;
+    height: 30px;
+    HorizontalLayout {
+        s := Rectangle { width: 100px; }
+        for order in [-1, -2]: box := Cell {
+            width: 100px;
+            layout-order: order;
+            Inner { }
+        }
+    }
+}
+
+component RowNamedOtherwise inherits Rectangle {
+    out property <length> static-x: s.x;
+    width: 300px;
+    height: 30px;
+    HorizontalLayout {
+        s := Rectangle { width: 100px; }
+        for order in [-1, -2]: place := Cell {
+            width: 100px;
+            layout-order: order;
+            Inner { }
+        }
+    }
+}
+
+component RowUnnamed inherits Rectangle {
+    out property <length> static-x: s.x;
+    width: 300px;
+    height: 30px;
+    HorizontalLayout {
+        s := Rectangle { width: 100px; }
+        for order in [-1, -2]: Cell {
+            width: 100px;
+            layout-order: order;
+        }
+    }
+}
+
+// A repeated cell named as the inlined element, kept at the bottom of a row taller than it.
+component RowAligned inherits Rectangle {
+    width: 300px;
+    height: 40px;
+    HorizontalLayout {
+        for i in [0]: box := Cell {
+            width: 100px;
+            preferred-height: 10px;
+            cross-axis-self-alignment: end;
+            Inner { }
+        }
+    }
+}
+
+export component TestCase inherits Window {
+    width: 300px;
+    height: 130px;
+    VerticalLayout {
+        r0 := RowNamedAsInner { }
+        r1 := RowNamedOtherwise { }
+        r2 := RowUnnamed { }
+        aligned := RowAligned { }
+    }
+    out property <length> x0: r0.static-x;
+    out property <length> x1: r1.static-x;
+    out property <length> x2: r2.static-x;
+    out property <bool> test: r0.static-x == 200px && r1.static-x == 200px && r2.static-x == 200px;
+}
+
+/*
+```rust
+let instance = TestCase::new().unwrap();
+assert_eq!((instance.get_x0(), instance.get_x1(), instance.get_x2()), (200., 200., 200.));
+assert!(instance.get_test());
+
+// The repeated cell can't be referenced from slint code; query it by element id.
+let cell = slint_testing::ElementHandle::find_by_element_id(&instance, "RowAligned::box").next().unwrap();
+let row = slint_testing::ElementHandle::find_by_element_id(&instance, "TestCase::aligned").next().unwrap();
+assert_eq!(cell.size().height, 10.0, "the end-aligned cell keeps its preferred height");
+assert_eq!(cell.absolute_position().y - row.absolute_position().y, 30.0, "aligned to the bottom");
+```
+
+```cpp
+auto handle = TestCase::create();
+const TestCase &instance = *handle;
+assert_eq(instance.get_x0(), 200.);
+assert_eq(instance.get_x1(), 200.);
+assert_eq(instance.get_x2(), 200.);
+assert(instance.get_test());
+
+auto cell = slint::testing::ElementHandle::find_by_element_id(handle, "RowAligned::box")[0];
+auto row = slint::testing::ElementHandle::find_by_element_id(handle, "TestCase::aligned")[0];
+assert_eq(cell.size().height, 10.0);
+assert_eq(cell.absolute_position().y - row.absolute_position().y, 30.0);
+```
+
+```js
+var instance = new slint.TestCase();
+assert.equal(instance.x0, 200);
+assert.equal(instance.x1, 200);
+assert.equal(instance.x2, 200);
+assert(instance.test);
+```
+*/

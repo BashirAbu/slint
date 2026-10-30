@@ -424,6 +424,11 @@ fn is_declaration(x: &NamedReference) -> bool {
     x.element().borrow().property_declarations.contains_key(x.name())
 }
 
+/// Whether the property is one every element has (`layout-order`, `x`, ...), not one declared
+fn is_reserved(x: &NamedReference) -> bool {
+    crate::typeregister::reserved_property(x.name().as_str().into()).property_type != Type::Invalid
+}
+
 /// Out of two named reference, return the one which is the best to keep.
 fn best_property(p1: NamedReference, p2: NamedReference) -> NamedReference {
     // Try to find which is the more canonical property
@@ -433,6 +438,11 @@ fn best_property(p1: NamedReference, p2: NamedReference) -> NamedReference {
                 !$x.element().borrow().enclosing_component.upgrade().unwrap().is_global(),
                 is_declaration(&$x),
                 $x.element().borrow().id.clone(),
+                // On one element, its own reserved property is kept over a declaration that
+                // `move_declarations` moved onto it as `<id>-<property>`: later passes read the
+                // reserved one by name, as the item-info accessors read a repeated root's
+                // `layout-order`, and the name alone would keep whichever sorts first.
+                !is_reserved(&$x),
                 $x.name(),
             )
         }};
