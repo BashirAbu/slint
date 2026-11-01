@@ -312,13 +312,21 @@ pub(super) fn create_text_paragraphs(
             let mut start = 0;
             for paragraph in rich_text.paragraphs {
                 let end = start + paragraph.text.len();
-                paragraphs.push(paragraph_from_text(
+                let mut shaped = paragraph_from_text(
                     font_context,
                     &paragraph.text,
                     start..end,
                     paragraph.formatting,
                     paragraph.links,
-                ));
+                );
+                // A list item's wrapped lines stand under its words, not under its marker.
+                if let Some(marker) = i_slint_common::styled_text::list_marker(&paragraph.text) {
+                    let mut marker = layout_builder.build(font_context, marker, Vec::new(), None);
+                    marker.break_all_lines(None);
+                    let hanging = parley::IndentOptions { each_line: false, hanging: true };
+                    shaped.layout.set_text_indent(marker.full_width(), hanging);
+                }
+                paragraphs.push(shaped);
                 start = end + 1;
             }
         }

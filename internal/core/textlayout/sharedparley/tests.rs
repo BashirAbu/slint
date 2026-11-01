@@ -119,6 +119,53 @@ fn test_text_line_height_matches_shaped_single_line() {
 }
 
 #[test]
+fn a_list_items_wrapped_lines_stand_under_its_words_not_its_marker() {
+    let mut font_ctx = test_font_context();
+    let styled = |text: &str| {
+        PlainOrStyledText::Styled(crate::styled_text::StyledText {
+            paragraphs: [i_slint_common::styled_text::StyledTextParagraph {
+                text: text.into(),
+                formatting: Default::default(),
+                links: Default::default(),
+            }]
+            .into(),
+        })
+    };
+    let offsets = |text: &str, font_ctx: &mut parley::FontContext| {
+        let builder = super::shaping::wrap_builder_for_tests();
+        let mut paragraphs =
+            create_text_paragraphs(&builder, font_ctx, styled(text), Color::default());
+        let layout = &mut paragraphs[0].layout;
+        layout.break_all_lines(Some(100.));
+        layout.align(parley::Alignment::Start, Default::default());
+        layout.lines().map(|line| line.metrics().offset).collect::<Vec<_>>()
+    };
+    let words = "one two three four five six seven eight nine ten";
+
+    let bullet = offsets(&alloc::format!("• {words}"), &mut font_ctx);
+    assert!(bullet.len() > 1, "{bullet:?}");
+    assert_eq!(bullet[0], 0.);
+    assert!(bullet[1..].iter().all(|offset| *offset > 0. && *offset == bullet[1]), "{bullet:?}");
+
+    // A number's marker is as wide as it is, and a nested item's starts further in.
+    let number = offsets(&alloc::format!("12. {words}"), &mut font_ctx);
+    assert!(number[1] > bullet[1], "{number:?}");
+    let nested = offsets(&alloc::format!("    ◦ {words}"), &mut font_ctx);
+    assert!(nested[1] > bullet[1], "{nested:?}");
+
+    // Words that are no list item's wrap flush, and a plain text's too, whatever it starts with.
+    let words = offsets(words, &mut font_ctx);
+    assert!(words.len() > 1 && words.iter().all(|offset| *offset == 0.), "{words:?}");
+    let builder = super::shaping::wrap_builder_for_tests();
+    let plain = PlainOrStyledText::Plain("• one two three four five six seven eight".into());
+    let mut paragraphs = create_text_paragraphs(&builder, &mut font_ctx, plain, Color::default());
+    let layout = &mut paragraphs[0].layout;
+    layout.break_all_lines(Some(100.));
+    layout.align(parley::Alignment::Start, Default::default());
+    assert!(layout.lines().all(|line| line.metrics().offset == 0.));
+}
+
+#[test]
 fn test_crlf_line_count() {
     assert_eq!(visual_line_count("hello\r\nworld"), visual_line_count("hello\nworld"));
     assert_eq!(visual_line_count("hello\r\nworld"), 2);

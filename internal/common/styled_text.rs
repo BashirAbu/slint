@@ -137,6 +137,18 @@ pub fn paragraph_from_plain_text(text: alloc::string::String) -> StyledTextParag
 /// This is the character for private use that is used to make interpolation possible in markdown.
 pub const MARKDOWN_INTERPOLATION_PLACEHOLDER: char = '\u{e541}';
 
+/// What a list item's paragraph begins with, as `begin_paragraph` writes it: its indentation and its
+/// marker with the space after it.
+pub fn list_marker(paragraph: &str) -> Option<&str> {
+    let unindented = paragraph.trim_start_matches(' ');
+    let number = unindented.trim_start_matches(|c: char| c.is_ascii_digit());
+    let words = ["• ", "◦ ", "▪ "]
+        .iter()
+        .find_map(|marker| unindented.strip_prefix(marker))
+        .or_else(|| number.strip_prefix(". ").filter(|_| number.len() < unindented.len()))?;
+    Some(&paragraph[..paragraph.len() - words.len()])
+}
+
 #[cfg(feature = "markdown")]
 fn begin_paragraph(indentation: u32, list_item_type: Option<ListItemType>) -> StyledTextParagraph {
     let mut text = alloc::string::String::with_capacity(indentation as usize * 4);
