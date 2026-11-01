@@ -180,6 +180,26 @@ fn rewrite_layoutinfo_v_for_constraint(expr: &mut Expression, width_param: &Expr
     });
 }
 
+/// A Flickable's content is as tall as its layouts need at the width they are
+/// laid out at. The plain `min-height` it starts from measures repeated
+/// height-for-width cells at their preferred width, and cannot read the layout's
+/// width instead: that width may itself follow a height through a sibling's
+/// horizontal info (`width: self.height`).
+fn measure_flickable_content_at_its_width(flickable: &ElementRc) {
+    if !crate::passes::flickable::is_flickable_element(flickable) {
+        return;
+    }
+    let flickable = flickable.borrow();
+    let Some(mut content_height) = flickable.binding_mut("content-height") else { return };
+    content_height.expression.visit_recursive_mut(&mut |sub| {
+        let Expression::PropertyReference(nr) = &*sub else { return };
+        if nr.name() == "min-height" {
+            let width = NamedReference::new(&nr.element(), SmolStr::new_static("width"));
+            rewrite_layoutinfo_v_for_constraint(sub, &Expression::PropertyReference(width));
+        }
+    });
+}
+
 /// Synthesize `layoutinfo-v-with-constraint` on every element whose
 /// vertical layout info depends on its width. The parameterized
 /// function breaks the recursion that would otherwise occur when the
@@ -194,6 +214,7 @@ pub fn synthesize_layoutinfo_v_with_constraint(component: &Rc<Component>) {
         for c in &children {
             has_v_cross |= walk(c);
         }
+        measure_flickable_content_at_its_width(elem);
         // Repeater body: recurse into the moved-out sub-component.
         let repeated_body = {
             let elem_b = elem.borrow();

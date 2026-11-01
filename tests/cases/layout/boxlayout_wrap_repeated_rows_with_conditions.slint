@@ -1,0 +1,46 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A Flickable's column of repeated rows that wrap, each a layout whose wrapping text comes first and
+// whose other cells are conditional. A plain layout info measures them at their preferred width, one
+// line each; the Flickable's content is as tall as they are laid out, at the width it gives them.
+export component TestCase inherits Window {
+    width: 100px;
+    height: 100px;
+    property <string> words: "one two three four five six seven eight nine ten eleven twelve thirteen";
+    out property <length> content: scroll.viewport-height;
+    out property <length> column-height: column.height;
+    out property <length> last-end: last.absolute-position.y + last.height;
+    out property <length> first-height: first.height;
+    in-out property <bool> asking;
+    scroll := Flickable {
+        viewport-width: self.width;
+        VerticalLayout {
+            TouchArea {
+                column := VerticalLayout {
+                    spacing: 16px;
+                    alignment: start;
+                    if root.asking: Rectangle { height: 10px; }
+                    for n[i] in 6: VerticalLayout {
+                        Text { wrap: word-wrap; text: root.words; font-size: 10px; }
+                        if n == 100: Rectangle { height: 20px; }
+                    }
+                    first := Text { wrap: word-wrap; text: root.words; font-size: 10px; }
+                    last := Rectangle { height: 5px; }
+                }
+            }
+        }
+    }
+    out property <bool> test: root.content == root.last-end && root.column-height == root.last-end
+        && root.first-height > 12px;
+}
+
+/*
+```rust
+let instance = TestCase::new().unwrap();
+assert_eq!((instance.get_content(), instance.get_column_height()), (instance.get_last_end(), instance.get_last_end()));
+assert!(instance.get_test());
+instance.set_asking(true);
+assert_eq!((instance.get_content(), instance.get_column_height()), (instance.get_last_end(), instance.get_last_end()));
+```
+*/
