@@ -376,6 +376,33 @@ pub(crate) enum WindowVisibility {
 
 /// GraphicsWindow is an implementation of the [WindowAdapter][`crate::eventloop::WindowAdapter`] trait. This is
 /// typically instantiated by entry factory functions of the different graphics back ends.
+/// The letter a key held with Control (Command on Apple) stands for in a shortcut, when the layout
+/// types something else there: on an Arabic or Cyrillic layout Control+C types no Latin "c", and is
+/// still Copy, as browsers and native programs take it. Shortcuts name Latin letters, so this goes
+/// by the key's position. Control+Alt stays out of it, being how Windows reports AltGr.
+fn shortcut_letter(
+    typed: &str,
+    key: winit::keyboard::PhysicalKey,
+    modifiers: winit::keyboard::ModifiersState,
+) -> Option<char> {
+    use winit::keyboard::KeyCode::*;
+    const LETTERS: [winit::keyboard::KeyCode; 26] = [
+        KeyA, KeyB, KeyC, KeyD, KeyE, KeyF, KeyG, KeyH, KeyI, KeyJ, KeyK, KeyL, KeyM, KeyN, KeyO,
+        KeyP, KeyQ, KeyR, KeyS, KeyT, KeyU, KeyV, KeyW, KeyX, KeyY, KeyZ,
+    ];
+    let shortcut_modifier = if i_slint_core::is_apple_platform() {
+        modifiers.super_key()
+    } else {
+        modifiers.control_key()
+    };
+    if !shortcut_modifier || modifiers.alt_key() || typed.is_ascii() {
+        return None;
+    }
+    let winit::keyboard::PhysicalKey::Code(code) = key else { return None };
+    let index = LETTERS.iter().position(|letter| *letter == code)?;
+    Some((b'a' + index as u8) as char)
+}
+
 pub struct WinitWindowAdapter {
     pub shared_backend_data: Rc<SharedBackendData>,
     window: corelib::api::Window,
@@ -459,6 +486,7 @@ pub struct WinitWindowAdapter {
     /// Whether a *mouse* button is currently pressed. Touch input is handled
     /// separately via `process_touch_input` and does not affect this flag.
     pressed: Cell<bool>,
+    keyboard_modifiers: Cell<winit::keyboard::ModifiersState>,
     current_resize_direction: Cell<Option<ResizeDirection>>,
     /// Allocates small i32 finger ids for winit's per-device u64 touch ids.
     touch_finger_ids: RefCell<crate::touch_finger_id::TouchFingerIdAllocator>,
@@ -514,6 +542,7 @@ impl WinitWindowAdapter {
             custom_cursor_source: Cell::new(None),
             cursor_pos: Default::default(),
             pressed: Default::default(),
+            keyboard_modifiers: Default::default(),
             current_resize_direction: Default::default(),
             touch_finger_ids: Default::default(),
         });
@@ -1320,6 +1349,10 @@ impl WinitWindowAdapter {
                 self.activation_changed(have_focus)?;
             }
 
+            WinitWindowEvent::ModifiersChanged(modifiers) => {
+                self.keyboard_modifiers.set(modifiers.state());
+            }
+
             WinitWindowEvent::KeyboardInput { event, is_synthetic, .. } => {
                 let key_code = event.logical_key.clone();
                 // For now: Match Qt's behavior of mapping command to control and control to meta (LWin/RWin).
@@ -1390,6 +1423,12 @@ impl WinitWindowAdapter {
                     }
                     text_without_modifiers
                 };
+
+                if let Some(letter) =
+                    shortcut_letter(&text, event.physical_key, self.keyboard_modifiers.get())
+                {
+                    text = letter.into();
+                }
 
                 if text.is_empty() {
                     // Failed to translate the key event
@@ -2416,4 +2455,28 @@ fn canvas_has_explicit_size_set(canvas: &web_sys::HtmlCanvasElement) -> bool {
 
     computed_style.get_property_value("width").ok().as_deref() != Some("auto")
         || computed_style.get_property_value("height").ok().as_deref() != Some("auto")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shortcut_letter;
+    use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+
+    #[test]
+    fn shortcuts_go_by_the_position_on_a_layout_without_latin_letters() {
+        let shortcut = if i_slint_core::is_apple_platform() {
+            ModifiersState::SUPER
+        } else {
+            ModifiersState::CONTROL
+        };
+        let c = PhysicalKey::Code(KeyCode::KeyC);
+        assert_eq!(shortcut_letter("ؤ", c, shortcut), Some('c'));
+        assert_eq!(shortcut_letter("с", PhysicalKey::Code(KeyCode::KeyV), shortcut), Some('v'));
+        // A layout that types Latin letters keeps them, wherever it has them.
+        assert_eq!(shortcut_letter("c", PhysicalKey::Code(KeyCode::KeyJ), shortcut), None);
+        // Typing, AltGr, and a key that is no letter's are left alone.
+        assert_eq!(shortcut_letter("ؤ", c, ModifiersState::empty()), None);
+        assert_eq!(shortcut_letter("ؤ", c, shortcut | ModifiersState::ALT), None);
+        assert_eq!(shortcut_letter("ç", PhysicalKey::Code(KeyCode::Digit9), shortcut), None);
+    }
 }

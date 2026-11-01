@@ -328,6 +328,16 @@ fn event_text(e: &web_sys::KeyboardEvent, is_apple: bool) -> Option<SharedString
     }
     i_slint_common::for_each_keys!(check_non_printable_code);
 
+    // A shortcut on a layout without Latin letters goes by the key's position, as in the adapter.
+    let shortcut_modifier = if is_apple { e.meta_key() } else { e.ctrl_key() };
+    if shortcut_modifier
+        && !e.alt_key()
+        && !key.is_ascii()
+        && let Some(letter) = e.code().strip_prefix("Key")
+    {
+        return Some(letter.to_lowercase().as_str().into());
+    }
+
     let mut chars = key.chars();
     match chars.next() {
         Some(first_char) if chars.next().is_none() => Some(first_char.into()),
@@ -338,10 +348,15 @@ fn event_text(e: &web_sys::KeyboardEvent, is_apple: bool) -> Option<SharedString
 scoped_tls_hkt::scoped_thread_local!(static CURRENT_WASM_CLIPBOARD_DATA : for<'a> &'a RefCell<String>);
 
 pub(crate) fn set_clipboard_text(data: String, clipboard: i_slint_core::platform::Clipboard) {
-    if CURRENT_WASM_CLIPBOARD_DATA.is_set()
-        && matches!(clipboard, i_slint_core::platform::Clipboard::DefaultClipboard)
-    {
+    if !matches!(clipboard, i_slint_core::platform::Clipboard::DefaultClipboard) {
+        return;
+    }
+    if CURRENT_WASM_CLIPBOARD_DATA.is_set() {
         CURRENT_WASM_CLIPBOARD_DATA.with(|current_data| *current_data.borrow_mut() = data)
+    } else if let Some(window) = web_sys::window().filter(|window| window.is_secure_context()) {
+        // Outside the browser's own copy event: a button, or a key with no text input focused.
+        // The page may still write to the clipboard during what the user did, where it is secure.
+        let _ = window.navigator().clipboard().write_text(&data);
     }
 }
 
