@@ -1,0 +1,26 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+export component TestCase inherits Window {
+    out property <length> shown-width: self.width;
+    out property <length> shown-height: self.height;
+}
+
+/*
+```rust
+let instance = TestCase::new().unwrap();
+slint_testing::set_window_scale_factor(&instance, 2.);
+
+// A logical size is that many logical pixels, and twice as many physical ones.
+instance.window().set_size(slint::LogicalSize::new(100., 50.));
+assert_eq!(instance.get_shown_width(), 100.);
+assert_eq!(instance.get_shown_height(), 50.);
+assert_eq!(instance.window().size(), slint::PhysicalSize::new(200, 100));
+
+// A physical size is half as many logical ones.
+instance.window().set_size(slint::PhysicalSize::new(300, 100));
+assert_eq!(instance.get_shown_width(), 150.);
+assert_eq!(instance.get_shown_height(), 50.);
+assert_eq!(instance.window().size(), slint::PhysicalSize::new(300, 100));
+```
+*/
