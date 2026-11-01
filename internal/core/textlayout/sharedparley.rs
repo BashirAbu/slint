@@ -213,14 +213,25 @@ pub fn draw_text(
             };
 
             if render {
+                let selected = text.selection();
+                let selection_spans = selected.as_ref().map_or_else(SelectionSpans::default, |s| {
+                    layout.selection_geometry(s.range.clone(), &draw::visible_band(item_renderer))
+                });
+                if let Some(selected) = &selected {
+                    for background in selection_spans.backgrounds() {
+                        item_renderer.fill_rectangle_with_color(background, selected.background);
+                    }
+                }
+                let selection = selected
+                    .filter(|_| !selection_spans.is_empty())
+                    .and_then(|s| item_renderer.platform_brush_for_color(&s.foreground))
+                    .map(|foreground| SelectionRendering { spans: &selection_spans, foreground });
                 layout.draw(
                     item_renderer,
                     platform_fill_brush,
                     platform_stroke_brush,
                     text_color,
-                    // `Text` has no selection today; the machinery is shared so wiring one up
-                    // later is a matter of passing spans here.
-                    None,
+                    selection.as_ref(),
                 );
             }
 
@@ -241,6 +252,39 @@ pub fn link_under_cursor(
     window: &crate::api::Window,
     cache: Option<&TextLayoutCache>,
 ) -> Option<std::string::String> {
+    with_item_layout(scale_factor, text, item_rc, size, window, cache, |layout| {
+        link_in_layout(layout, cursor)
+    })
+    .flatten()
+}
+
+/// The byte offset in the raw text of the character boundary nearest `cursor`.
+#[cfg(feature = "std")]
+pub fn byte_offset_under_cursor(
+    scale_factor: ScaleFactor,
+    text: Pin<&dyn crate::item_rendering::RenderText>,
+    item_rc: &crate::item_tree::ItemRc,
+    size: LogicalSize,
+    cursor: PhysicalPoint,
+    window: &crate::api::Window,
+    cache: Option<&TextLayoutCache>,
+) -> Option<usize> {
+    with_item_layout(scale_factor, text, item_rc, size, window, cache, |layout| {
+        layout.byte_offset_from_point(cursor).0
+    })
+}
+
+/// Lays `text` out as it draws at `size`, and lends the layout to `f`.
+#[cfg(feature = "std")]
+fn with_item_layout<R>(
+    scale_factor: ScaleFactor,
+    text: Pin<&dyn crate::item_rendering::RenderText>,
+    item_rc: &crate::item_tree::ItemRc,
+    size: LogicalSize,
+    window: &crate::api::Window,
+    cache: Option<&TextLayoutCache>,
+    f: impl FnOnce(&Layout) -> R,
+) -> Option<R> {
     let layout_builder = shaping_builder(text, Some(item_rc), text.wrap(), scale_factor);
 
     let (horizontal_align, vertical_align) = text.alignment();
@@ -259,9 +303,8 @@ pub fn link_under_cursor(
             text_overflow: text.overflow(),
         },
         window,
-        |layout| link_in_layout(layout, cursor),
+        f,
     )
-    .flatten()
 }
 
 fn link_in_layout(layout: &Layout, cursor: PhysicalPoint) -> Option<std::string::String> {

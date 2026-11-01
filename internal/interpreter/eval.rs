@@ -2725,7 +2725,9 @@ pub(crate) fn find_window_adapter(
 /// `TextInput.select-all()`) to the matching native item method by
 /// downcasting the runtime `ItemRc` to its concrete item type.
 fn call_item_member_function(ctx: &EvalContext, function: &MemberReference) -> Value {
-    use i_slint_core::items::{ContextMenu, SwipeGestureHandler, TextInput, WindowItem};
+    use i_slint_core::items::{
+        ContextMenu, SelectionArea, SwipeGestureHandler, TextInput, WindowItem,
+    };
     let MemberReference::Relative { local_reference, .. } = function else {
         return Value::Void;
     };
@@ -2767,6 +2769,13 @@ fn call_item_member_function(ctx: &EvalContext, function: &MemberReference) -> V
             "paste" => paste => (),
             "undo" => undo => (),
             "redo" => redo => (),
+        );
+    }
+    if let Some(area) = vtable::VRef::downcast_pin::<SelectionArea>(item_rc.borrow()) {
+        dispatch!(area, prop_name.as_str();
+            "copy" => copy => (),
+            "select-all" => select_all => (),
+            "clear-selection" => clear_selection => (),
         );
     }
     if let Some(swipe) = vtable::VRef::downcast_pin::<SwipeGestureHandler>(item_rc.borrow()) {

@@ -114,8 +114,10 @@ impl TypeInformation {
 #[cfg(feature = "preview-engine")]
 fn builtin_component_info(name: &str) -> ComponentInformation {
     let is_layout = matches!(name, "GridLayout" | "HorizontalLayout" | "VerticalLayout");
-    let is_interactive =
-        matches!(name, "Flickable" | "FocusScope" | "SwipeGestureHandler" | "TouchArea");
+    let is_interactive = matches!(
+        name,
+        "Flickable" | "FocusScope" | "SelectionArea" | "SwipeGestureHandler" | "TouchArea"
+    );
 
     let default_properties = match name {
         "Text" | "TextInput" => vec![PropertyChange::new("text", format!("\"{name}\""))],

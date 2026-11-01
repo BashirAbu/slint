@@ -308,14 +308,18 @@ pub(super) fn create_text_paragraphs(
             }
         }
         PlainOrStyledText::Styled(rich_text) => {
+            // Offsets as in `get_raw_text`, which joins the paragraphs with a line break.
+            let mut start = 0;
             for paragraph in rich_text.paragraphs {
+                let end = start + paragraph.text.len();
                 paragraphs.push(paragraph_from_text(
                     font_context,
                     &paragraph.text,
-                    0..0,
+                    start..end,
                     paragraph.formatting,
                     paragraph.links,
                 ));
+                start = end + 1;
             }
         }
     };

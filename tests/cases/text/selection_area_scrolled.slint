@@ -1,0 +1,177 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A SelectionArea inside a Flickable: a drag past its edge scrolls it, and a finger scrolls or selects
+// by whether it rests first.
+export component TestCase inherits Window {
+    width: 200phx;
+    height: 100phx;
+    default-font-size: 10phx;
+
+    in-out property <length> content-y <=> scroll.content-y;
+    out property <length> lowest: self.height - scroll.content-height;
+    out property <bool> has-selection: area.has-selection;
+    out property <bool> has-focus: area.has-focus;
+    out property <int> menus;
+
+    public function copied() -> string {
+        pasted.text = "";
+        area.copy();
+        pasted.paste();
+        pasted.text
+    }
+    public function clear() {
+        area.clear-selection();
+    }
+
+    scroll := Flickable {
+        x: 0;
+        y: 0;
+        width: 200phx;
+        height: 100phx;
+        content-width: 200phx;
+        content-height: 400phx;
+        mouse-drag-pan-enabled: false;
+
+        area := SelectionArea {
+            x: 0;
+            y: 0;
+            width: 200phx;
+            height: 400phx;
+            menu-requested => {
+                root.menus += 1;
+            }
+
+            for line[index] in ["first", "two two", "three", "four", "five", "six", "seven", "last"]: StyledText {
+                x: 0;
+                y: index * 50phx;
+                width: 200phx;
+                height: 20phx;
+                text: @markdown("\{line}");
+            }
+        }
+    }
+
+    pasted := TextInput {
+        single-line: false;
+        x: 0;
+        y: 110phx;
+        width: 200phx;
+        height: 16phx;
+    }
+
+    out property <bool> test: true;
+}
+
+/*
+```rust
+use slint::{platform::PointerEventButton, platform::WindowEvent, LogicalPosition};
+use slint_testing::{InternalEvent, LogicalPoint, TouchPhase};
+
+const ALL: &str = "first\n\ntwo two\n\nthree\n\nfour\n\nfive\n\nsix\n\nseven\n\nlast";
+
+let instance = TestCase::new().unwrap();
+let window = instance.window();
+let at = |x: f32, y: f32| LogicalPosition::new(x, y);
+let press = |x, y| window.dispatch_event(WindowEvent::PointerPressed { position: at(x, y), button: PointerEventButton::Left });
+let release = |x, y| window.dispatch_event(WindowEvent::PointerReleased { position: at(x, y), button: PointerEventButton::Left });
+let go = |x, y| window.dispatch_event(WindowEvent::PointerMoved { position: at(x, y) });
+let ticks = |count| {
+    for _ in 0..count {
+        slint_testing::mock_elapsed_time(16);
+    }
+};
+let finger = |x: f32, y: f32, phase| window.dispatch_event(WindowEvent::internal(InternalEvent::Touch { id: 3, position: LogicalPoint::new(x, y), phase }));
+
+// Inside the view a drag scrolls nothing.
+press(1., 5.);
+go(199., 55.);
+slint_testing::mock_elapsed_time(100);
+assert_eq!(instance.get_content_y(), 0.);
+assert_eq!(instance.invoke_copied(), "first\n\ntwo two");
+
+// Past the bottom it scrolls on while the pointer stays there, and the selection goes along.
+go(199., 120.);
+assert!(instance.get_content_y() < 0.);
+ticks(50);
+assert_eq!(instance.get_content_y(), instance.get_lowest());
+assert_eq!(instance.invoke_copied(), ALL);
+
+// Back inside it stops.
+go(1., 5.);
+ticks(2);
+let stopped = instance.get_content_y();
+ticks(5);
+assert_eq!(instance.get_content_y(), stopped);
+
+// Past the top it scrolls back, and a selection runs up from the anchor the same way.
+go(199., -20.);
+assert!(instance.get_content_y() > stopped);
+ticks(50);
+assert_eq!(instance.get_content_y(), 0.);
+assert!(!instance.get_has_selection());
+release(199., -20.);
+slint_testing::mock_elapsed_time(1000);
+
+// Released, it scrolls no more.
+instance.invoke_clear();
+press(1., 5.);
+go(199., 120.);
+release(199., 120.);
+let released = instance.get_content_y();
+ticks(5);
+assert_eq!(instance.get_content_y(), released);
+instance.set_content_y(0.);
+instance.invoke_clear();
+slint_testing::mock_elapsed_time(1000);
+
+// A finger that rests selects the word under it and asks for the menu when it lifts.
+// (The Flickable holds the press back first, and each call fires a timer once.)
+finger(1., 55., TouchPhase::Started);
+slint_testing::mock_elapsed_time(100);
+slint_testing::mock_elapsed_time(300);
+assert!(!instance.get_has_selection());
+slint_testing::mock_elapsed_time(150);
+assert!(instance.get_has_selection());
+assert!(instance.get_has_focus());
+assert_eq!(instance.invoke_copied(), "two");
+assert_eq!(instance.get_menus(), 0);
+finger(1., 55., TouchPhase::Ended);
+assert_eq!(instance.get_menus(), 1);
+assert_eq!(instance.invoke_copied(), "two");
+slint_testing::mock_elapsed_time(1000);
+
+// A rest and then a drag extends it, by words, and scrolls nothing.
+finger(1., 5., TouchPhase::Started);
+slint_testing::mock_elapsed_time(100);
+slint_testing::mock_elapsed_time(450);
+assert_eq!(instance.invoke_copied(), "first");
+finger(199., 55., TouchPhase::Moved);
+assert_eq!(instance.invoke_copied(), "first\n\ntwo two");
+assert_eq!(instance.get_content_y(), 0.);
+finger(199., 55., TouchPhase::Ended);
+assert_eq!(instance.get_menus(), 2);
+slint_testing::mock_elapsed_time(1000);
+
+// A tap clears it.
+finger(100., 5., TouchPhase::Started);
+slint_testing::mock_elapsed_time(150);
+finger(100., 5., TouchPhase::Ended);
+slint_testing::mock_elapsed_time(1000);
+assert!(!instance.get_has_selection());
+assert_eq!(instance.get_menus(), 2);
+
+// A swipe scrolls and selects nothing, and no long press fires after it.
+finger(1., 55., TouchPhase::Started);
+finger(1., 55., TouchPhase::Moved);
+slint_testing::mock_elapsed_time(16);
+finger(1., 15., TouchPhase::Moved);
+assert!(instance.get_content_y() < 0.);
+slint_testing::mock_elapsed_time(1000);
+assert!(!instance.get_has_selection());
+finger(1., 15., TouchPhase::Ended);
+slint_testing::mock_elapsed_time(1000);
+assert!(!instance.get_has_selection());
+assert_eq!(instance.get_menus(), 2);
+```
+*/

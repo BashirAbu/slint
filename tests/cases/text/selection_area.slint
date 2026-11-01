@@ -1,0 +1,351 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// Selecting across the StyledText elements of a SelectionArea: a drag, a word, a paragraph, all of it,
+// by keyboard and by menu, with links and the controls under it keeping their own clicks.
+//
+// A StyledText measures with a real font in the test driver, so the assertions stand at the ends of
+// words and lines, which no font moves.
+export component TestCase inherits Window {
+    width: 200phx;
+    height: 150phx;
+    default-font-size: 10phx;
+
+    in-out property <string> link;
+    out property <int> clicks;
+    out property <int> menus;
+    out property <length> menu-x;
+    out property <length> menu-y;
+    in-out property <bool> enabled <=> area.enabled;
+    out property <bool> has-selection: area.has-selection;
+    out property <bool> has-focus: area.has-focus;
+    out property <bool> input-focused: input.has-focus;
+    out property <bool> first-has-selection: first.has-selection;
+    out property <bool> unseen-has-selection: unseen.has-selection;
+    in-out property <styled-text> first-text: @markdown("one two three");
+
+    public function copied() -> string {
+        pasted.text = "";
+        area.copy();
+        pasted.paste();
+        pasted.text
+    }
+    public function pasted-text() -> string {
+        pasted.text = "";
+        pasted.paste();
+        pasted.text
+    }
+    public function select-everything() {
+        area.select-all();
+    }
+    public function clear() {
+        area.clear-selection();
+    }
+
+    area := SelectionArea {
+        x: 0;
+        y: 0;
+        width: 200phx;
+        height: 110phx;
+        menu-requested(position) => {
+            root.menus += 1;
+            root.menu-x = position.x;
+            root.menu-y = position.y;
+        }
+
+        first := StyledText {
+            x: 0;
+            y: 0;
+            width: 200phx;
+            height: 16phx;
+            text: root.first-text;
+        }
+
+        // No height: it takes no press and shows nothing, and a selection across it has its words.
+        unseen := StyledText {
+            x: 0;
+            y: 20phx;
+            width: 200phx;
+            height: 0;
+            text: @markdown("unseen");
+        }
+
+        StyledText {
+            x: 0;
+            y: 24phx;
+            width: 200phx;
+            height: 16phx;
+            text: @markdown("four five");
+        }
+
+        StyledText {
+            x: 0;
+            y: 48phx;
+            width: 200phx;
+            height: 30phx;
+            text: @markdown("six seven\n\neight");
+        }
+
+        StyledText {
+            x: 0;
+            y: 78phx;
+            width: 200phx;
+            height: 16phx;
+            text: @markdown("[here is a link](target)");
+            link-clicked(link) => {
+                root.link = link;
+            }
+        }
+
+        TouchArea {
+            x: 0;
+            y: 94phx;
+            width: 50phx;
+            height: 16phx;
+            clicked => {
+                root.clicks += 1;
+            }
+        }
+    }
+
+    input := TextInput {
+        x: 0;
+        y: 110phx;
+        width: 200phx;
+        height: 16phx;
+    }
+
+    pasted := TextInput {
+        single-line: false;
+        x: 0;
+        y: 130phx;
+        width: 200phx;
+        height: 16phx;
+    }
+
+    out property <bool> test: true;
+}
+
+/*
+```rust
+use slint::{platform::Key, platform::PointerEventButton, platform::WindowEvent, LogicalPosition};
+use slint::private_unstable_api::re_exports::{BuiltInMouseCursor, MouseCursorInner};
+
+const ALL: &str = "one two three\n\nunseen\n\nfour five\n\nsix seven\neight\n\nhere is a link";
+
+let instance = TestCase::new().unwrap();
+let window = instance.window();
+let at = |x: f32, y: f32| LogicalPosition::new(x, y);
+let press = |x, y| window.dispatch_event(WindowEvent::PointerPressed { position: at(x, y), button: PointerEventButton::Left });
+let release = |x, y| window.dispatch_event(WindowEvent::PointerReleased { position: at(x, y), button: PointerEventButton::Left });
+let go = |x, y| window.dispatch_event(WindowEvent::PointerMoved { position: at(x, y) });
+let settle = || slint_testing::mock_elapsed_time(1000);
+let drag = |from: (f32, f32), to: (f32, f32)| {
+    press(from.0, from.1);
+    go((from.0 + to.0) / 2., (from.1 + to.1) / 2.);
+    go(to.0, to.1);
+    release(to.0, to.1);
+    settle();
+};
+let cursor = || slint_testing::access_testing_window(window, |w| w.mouse_cursor());
+
+// Over text the pointer is a text cursor, and elsewhere it is not.
+go(100., 8.);
+assert_eq!(cursor(), MouseCursorInner::BuiltIn(BuiltInMouseCursor::Text));
+go(100., 20.);
+assert_eq!(cursor(), MouseCursorInner::BuiltIn(BuiltInMouseCursor::Default));
+
+// A drag along a line.
+assert!(!instance.get_has_selection());
+drag((1., 8.), (199., 8.));
+assert!(instance.get_has_selection());
+assert!(instance.get_has_focus());
+assert_eq!(instance.invoke_copied(), "one two three");
+
+// Part of it.
+drag((1., 8.), (20., 8.));
+let part = instance.invoke_copied();
+assert!(!part.is_empty() && part.len() < 13 && "one two three".starts_with(part.as_str()), "{part:?}");
+
+// Backwards.
+drag((199., 8.), (1., 8.));
+assert_eq!(instance.invoke_copied(), "one two three");
+
+// Across texts, a blank line between them.
+drag((1., 8.), (199., 32.));
+assert_eq!(instance.invoke_copied(), "one two three\n\nunseen\n\nfour five");
+assert!(instance.get_first_has_selection() && instance.get_unseen_has_selection());
+
+// From a gap, which counts as the start of the text below it.
+drag((100., 22.), (199., 32.));
+assert_eq!(instance.invoke_copied(), "four five");
+assert!(!instance.get_first_has_selection() && !instance.get_unseen_has_selection());
+
+// Selecting up to a text of no height leaves it out.
+drag((1., 8.), (199., 18.));
+assert_eq!(instance.invoke_copied(), "one two three");
+
+// Into a gap, the same.
+drag((1., 32.), (100., 44.));
+assert_eq!(instance.invoke_copied(), "four five");
+
+// Past everything, to the end of the last.
+drag((1., 32.), (150., 108.));
+assert_eq!(instance.invoke_copied(), "four five\n\nsix seven\neight\n\nhere is a link");
+
+// Paragraphs inside one text stay one line break apart.
+drag((1., 52.), (199., 70.));
+assert_eq!(instance.invoke_copied(), "six seven\neight");
+
+// A plain click clears it, and copying then leaves the clipboard alone.
+press(1., 8.);
+release(1., 8.);
+settle();
+assert!(!instance.get_has_selection());
+assert_eq!(instance.invoke_copied(), "six seven\neight");
+
+// A double click selects the word, and a drag from there goes on by words.
+press(1., 8.);
+release(1., 8.);
+slint_testing::mock_elapsed_time(50);
+press(1., 8.);
+assert_eq!(instance.invoke_copied(), "one");
+go(199., 8.);
+assert_eq!(instance.invoke_copied(), "one two three");
+release(199., 8.);
+settle();
+
+// At the end of a line, the last word.
+press(199., 8.);
+release(199., 8.);
+slint_testing::mock_elapsed_time(50);
+press(199., 8.);
+release(199., 8.);
+settle();
+assert_eq!(instance.invoke_copied(), "three");
+
+// A third click selects the paragraph, here one of two in the text.
+for _ in 0..2 {
+    press(1., 52.);
+    release(1., 52.);
+    slint_testing::mock_elapsed_time(50);
+}
+press(1., 52.);
+release(1., 52.);
+settle();
+assert_eq!(instance.invoke_copied(), "six seven");
+
+// Shift extends from where the selection began.
+drag((1., 8.), (199., 8.));
+slint_testing::send_keyboard_char(&instance, Key::Shift.into(), true);
+press(199., 32.);
+release(199., 32.);
+slint_testing::send_keyboard_char(&instance, Key::Shift.into(), false);
+settle();
+assert_eq!(instance.invoke_copied(), "one two three\n\nunseen\n\nfour five");
+
+// Control+C copies, and Escape clears.
+drag((1., 8.), (199., 8.));
+assert_eq!(instance.invoke_copied(), "one two three");
+instance.invoke_clear();
+drag((1., 32.), (199., 32.));
+slint_testing::send_keyboard_char(&instance, Key::Control.into(), true);
+slint_testing::send_keyboard_string_sequence(&instance, "c");
+slint_testing::send_keyboard_char(&instance, Key::Control.into(), false);
+assert_eq!(instance.invoke_pasted_text(), "four five");
+slint_testing::send_keyboard_char(&instance, Key::Escape.into(), true);
+slint_testing::send_keyboard_char(&instance, Key::Escape.into(), false);
+assert!(!instance.get_has_selection());
+
+// Caps Lock makes the letter a capital, and it is the same shortcut.
+drag((1., 8.), (199., 8.));
+slint_testing::send_keyboard_char(&instance, Key::Control.into(), true);
+slint_testing::send_keyboard_char(&instance, 'C', true);
+slint_testing::send_keyboard_char(&instance, 'C', false);
+slint_testing::send_keyboard_char(&instance, Key::Control.into(), false);
+assert_eq!(instance.invoke_pasted_text(), "one two three");
+instance.invoke_clear();
+
+// Control+A selects it all.
+slint_testing::send_keyboard_char(&instance, Key::Control.into(), true);
+slint_testing::send_keyboard_string_sequence(&instance, "a");
+slint_testing::send_keyboard_char(&instance, Key::Control.into(), false);
+assert_eq!(instance.invoke_copied(), ALL);
+
+// The same from code.
+instance.invoke_clear();
+assert!(!instance.get_has_selection());
+instance.invoke_select_everything();
+assert!(instance.get_has_selection());
+assert_eq!(instance.invoke_copied(), ALL);
+instance.invoke_clear();
+
+// A click on a link opens it and selects nothing.
+press(1., 85.);
+release(1., 85.);
+settle();
+assert_eq!(instance.get_link(), "target");
+assert!(!instance.get_has_selection());
+
+// A drag from a link selects and opens nothing.
+instance.set_link("".into());
+drag((1., 85.), (199., 85.));
+assert_eq!(instance.get_link(), "");
+assert_eq!(instance.invoke_copied(), "here is a link");
+
+// A control under the area keeps its click, and the selection stays.
+assert_eq!(instance.get_clicks(), 0);
+press(10., 100.);
+release(10., 100.);
+settle();
+assert_eq!(instance.get_clicks(), 1);
+assert_eq!(instance.invoke_copied(), "here is a link");
+
+// The right button asks for a menu at the pointer, over text or in a gap, and keeps the selection.
+let right = |x, y| {
+    window.dispatch_event(WindowEvent::PointerPressed { position: at(x, y), button: PointerEventButton::Right });
+    window.dispatch_event(WindowEvent::PointerReleased { position: at(x, y), button: PointerEventButton::Right });
+    settle();
+};
+right(15., 8.);
+assert_eq!((instance.get_menus(), instance.get_menu_x(), instance.get_menu_y()), (1, 15., 8.));
+assert_eq!(instance.invoke_copied(), "here is a link");
+right(120., 100.);
+assert_eq!((instance.get_menus(), instance.get_menu_x(), instance.get_menu_y()), (2, 120., 100.));
+assert_eq!(instance.invoke_copied(), "here is a link");
+
+// On a link it is the link's.
+right(1., 85.);
+assert_eq!(instance.get_menus(), 2);
+
+// Text that changes under a selection never panics on an offset that no longer holds.
+drag((1., 8.), (199., 8.));
+instance.set_first_text(slint::StyledText::from_markdown("é").unwrap());
+assert_eq!(instance.invoke_copied(), "here is a link");
+instance.set_first_text(slint::StyledText::from_markdown("one two three").unwrap());
+
+// Focus going elsewhere clears it.
+drag((1., 8.), (199., 8.));
+assert!(instance.get_has_selection());
+press(50., 115.);
+release(50., 115.);
+settle();
+assert!(instance.get_input_focused());
+assert!(!instance.get_has_focus());
+assert!(!instance.get_has_selection());
+
+// Tab goes past it.
+slint_testing::send_keyboard_char(&instance, '\t', true);
+slint_testing::send_keyboard_char(&instance, '\t', false);
+assert!(!instance.get_has_focus());
+
+// Disabled, it takes nothing, and the click reaches the link.
+instance.set_link("".into());
+instance.set_enabled(false);
+press(1., 85.);
+release(1., 85.);
+settle();
+assert!(!instance.get_has_focus());
+assert_eq!(instance.get_link(), "target");
+```
+*/

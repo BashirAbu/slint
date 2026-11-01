@@ -506,6 +506,20 @@ pub trait RenderText: RenderString {
     fn wrap(self: Pin<&Self>) -> TextWrap;
     fn overflow(self: Pin<&Self>) -> TextOverflow;
     fn is_markdown(self: Pin<&Self>) -> bool;
+    /// What is selected of the text, for an element that can have a selection.
+    fn selection(self: Pin<&Self>) -> Option<TextSelection> {
+        None
+    }
+}
+
+/// A selected byte range of a text element's raw text, and the colors it shows in.
+pub struct TextSelection {
+    /// The bytes selected.
+    pub range: core::ops::Range<usize>,
+    /// The color behind them.
+    pub background: Color,
+    /// The color they are drawn in.
+    pub foreground: Color,
 }
 
 impl HasFont for (SharedString, Brush) {

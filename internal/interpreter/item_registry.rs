@@ -57,6 +57,7 @@ impl ItemRegistry {
             FocusScope,
             KeyBinding,
             SwipeGestureHandler,
+            SelectionArea,
             ScaleRotateGestureHandler,
             Path,
             Flickable,

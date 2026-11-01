@@ -348,6 +348,7 @@ function getHelpUrlForElement(
         Rectangle: "elements/rectangle",
         // gestures
         Flickable: "gestures/flickable",
+        SelectionArea: "gestures/selectionarea",
         SwipeGestureHandler: "gestures/swipegesturehandler",
         TouchArea: "gestures/toucharea",
         // keyboard-input

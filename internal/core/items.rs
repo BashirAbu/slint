@@ -59,6 +59,8 @@ mod text;
 pub use text::*;
 mod input_items;
 pub use input_items::*;
+mod selection_area;
+pub use selection_area::*;
 mod image;
 pub use self::image::*;
 mod drag_n_drop;
@@ -712,6 +714,10 @@ crate::declare_item_vtable! {
 
 declare_item_vtable! {
     fn slint_get_SwipeGestureHandlerVTable() -> SwipeGestureHandlerVTable for SwipeGestureHandler
+}
+
+declare_item_vtable! {
+    fn slint_get_SelectionAreaVTable() -> SelectionAreaVTable for SelectionArea
 }
 
 declare_item_vtable! {

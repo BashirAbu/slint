@@ -1201,6 +1201,16 @@ fn build(l: &mut Loader) {
         in property <TextHorizontalAlignment> horizontal-alignment;
         /// The color used for rendering links in the text.
         in property <color> link-color: #00f;
+        /// The factor of the font's natural line height that lines are spaced by.
+        /// \default 1
+        in property <float> line-height-factor: 1;
+        /// `true` while a `SelectionArea` has selected some of the text. A text of no height shows
+        /// nothing and still counts in a selection, for what its surroundings show.
+        out property <bool> has-selection;
+        /// The background color of what a `SelectionArea` selects of the text.
+        in property <color> selection-background-color; // StyleMetrics.selection-background set in apply_default_properties_from_style
+        /// The foreground color of what a `SelectionArea` selects of the text.
+        in property <color> selection-foreground-color; // StyleMetrics.selection-foreground set in apply_default_properties_from_style
         /// The maximum number of lines to display. Wrapped lines count towards the limit.
         /// Values less than or equal to zero don't limit the number of lines.
         /// \default 0
@@ -1595,6 +1605,60 @@ fn build(l: &mut Loader) {
         /// \group:gestures
         @expands_to_parent_geometry
         Flickable: Flickable
+    }
+
+    item! { SelectionArea {
+        /// When disabled, the `SelectionArea` selects nothing and takes no pointer events.
+        /// \default true
+        in property <bool> enabled: true;
+        /// `true` while some text is selected.
+        out property <bool> has-selection;
+        /// `true` while the area holds the keyboard focus, which a press on it gives it.
+        out property <bool> has-focus;
+        /// Invoked at the release of the right button over the area, and when a finger lifts after
+        /// selecting by a long press, to show a menu. The position is in the area's coordinates.
+        callback menu-requested(position: Point);
+        /// Copies the selected text to the clipboard, a blank line between two texts. With nothing
+        /// selected, the clipboard stays as it was.
+        function copy() { }
+        /// Selects all the text under the area.
+        function select-all() { }
+        /// Selects nothing.
+        function clear-selection() { }
+    } }
+
+    element! {
+        /// Use the `SelectionArea` to let the user select and copy the `StyledText` elements under
+        /// it, as one selection across all of them.
+        ///
+        /// ```slint playground
+        /// export component Example inherits Window {
+        ///     width: 270px;
+        ///     height: 100px;
+        ///
+        ///     SelectionArea {
+        ///         VerticalLayout {
+        ///             StyledText { text: @markdown("Drag across these **two** paragraphs."); }
+        ///             StyledText { text: @markdown("Then press Control+C to copy them."); }
+        ///         }
+        ///     }
+        /// }
+        /// ```
+        ///
+        /// A left drag selects, starting on text or between texts, a double click selects a word and
+        /// a triple click a paragraph, and Shift extends the selection. A long press selects a word
+        /// on a touch screen and a drag from there extends it. Inside a `Flickable`, a drag past
+        /// its top or bottom edge scrolls it.
+        ///
+        /// With the keyboard focus, the area takes Control+C, Control+A and Escape. Focus going to
+        /// another element clears the selection.
+        ///
+        /// A press on a link, or on a control where no text is, stays theirs: a click on a link
+        /// opens it, and a drag from it selects. A press anywhere else on a `StyledText` is the
+        /// area's, so an element under the area can't take a click on the text it holds.
+        /// \group:gestures
+        @expands_to_parent_geometry
+        SelectionArea: SelectionArea
     }
 
     item! { SwipeGestureHandler {

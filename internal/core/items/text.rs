@@ -251,6 +251,13 @@ pub struct StyledTextItem {
     pub hovered_link: Property<SharedString>,
     pub link_pointer_event: Callback<PointerEventArg>,
     pub link_color: Property<Color>,
+    /// The range of the raw text a `SelectionArea` has selected. The language does not see it.
+    pub selection_start: Property<i32>,
+    pub selection_end: Property<i32>,
+    pub has_selection: Property<bool>,
+    pub selection_background_color: Property<Color>,
+    pub selection_foreground_color: Property<Color>,
+    pub line_height_factor: Property<f32>,
     pub cached_rendering_data: CachedRenderingData,
 }
 
@@ -419,7 +426,7 @@ impl HasFont for StyledTextItem {
             Default::default(),
             self.default_font_size(),
             Default::default(),
-            1.0,
+            self.line_height_factor(),
             Default::default(),
         )
     }
@@ -465,9 +472,40 @@ impl RenderText for StyledTextItem {
     fn is_markdown(self: Pin<&Self>) -> bool {
         true
     }
+
+    fn selection(self: Pin<&Self>) -> Option<crate::item_rendering::TextSelection> {
+        let range = self.selected_range();
+        (!range.is_empty()).then(|| crate::item_rendering::TextSelection {
+            range,
+            background: self.selection_background_color(),
+            foreground: self.selection_foreground_color(),
+        })
+    }
 }
 
 impl StyledTextItem {
+    /// The selected byte range of the raw text. Empty when the text changed under it and the
+    /// offsets no longer fall on characters: shaping panics on one that does not.
+    pub(super) fn selected_range(self: Pin<&Self>) -> core::ops::Range<usize> {
+        let range = self.selection_start() as usize..self.selection_end() as usize;
+        if range.is_empty() {
+            return 0..0;
+        }
+        let text = self.text();
+        let raw = crate::styled_text::get_raw_text(&text);
+        if raw.is_char_boundary(range.start) && raw.is_char_boundary(range.end) {
+            range
+        } else {
+            0..0
+        }
+    }
+
+    pub(super) fn set_selected_range(self: Pin<&Self>, range: core::ops::Range<usize>) {
+        Self::FIELD_OFFSETS.selection_start().apply_pin(self).set(range.start as i32);
+        Self::FIELD_OFFSETS.selection_end().apply_pin(self).set(range.end as i32);
+        Self::FIELD_OFFSETS.has_selection().apply_pin(self).set(!range.is_empty());
+    }
+
     pub fn font_metrics(
         self: Pin<&Self>,
         window_adapter: &Rc<dyn WindowAdapter>,
@@ -2449,7 +2487,7 @@ impl TextInput {
     }
 }
 
-fn next_paragraph_boundary(text: &str, last_cursor_pos: usize) -> usize {
+pub(super) fn next_paragraph_boundary(text: &str, last_cursor_pos: usize) -> usize {
     text.as_bytes()
         .iter()
         .enumerate()
@@ -2459,7 +2497,7 @@ fn next_paragraph_boundary(text: &str, last_cursor_pos: usize) -> usize {
         .unwrap_or(text.len())
 }
 
-fn prev_paragraph_boundary(text: &str, last_cursor_pos: usize) -> usize {
+pub(super) fn prev_paragraph_boundary(text: &str, last_cursor_pos: usize) -> usize {
     text.as_bytes()
         .iter()
         .enumerate()
@@ -2470,7 +2508,7 @@ fn prev_paragraph_boundary(text: &str, last_cursor_pos: usize) -> usize {
         .unwrap_or(0)
 }
 
-fn prev_word_boundary(text: &str, last_cursor_pos: usize) -> usize {
+pub(super) fn prev_word_boundary(text: &str, last_cursor_pos: usize) -> usize {
     let mut word_offset = 0;
 
     for (current_word_offset, _) in text.unicode_word_indices() {
@@ -2484,7 +2522,7 @@ fn prev_word_boundary(text: &str, last_cursor_pos: usize) -> usize {
     word_offset
 }
 
-fn next_word_boundary(text: &str, last_cursor_pos: usize) -> usize {
+pub(super) fn next_word_boundary(text: &str, last_cursor_pos: usize) -> usize {
     text.unicode_word_indices()
         .find(|(offset, slice)| *offset + slice.len() >= last_cursor_pos)
         .map_or(text.len(), |(offset, slice)| offset + slice.len())
