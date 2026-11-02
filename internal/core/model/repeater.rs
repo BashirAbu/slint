@@ -550,8 +550,12 @@ impl<T: RepeatedItemTree> ModelChangeListener for RepeaterTracker<T> {
         let mut inner = self.inner.borrow_mut();
         if index < inner.layout_state.offset {
             if index + count <= inner.layout_state.offset {
-                // Entirely before the visible range: shift the offset.
-                inner.layout_state.offset += count;
+                // Entirely before the visible range: shift the offset. With no instance nothing is
+                // in view to keep there: a model reset and filled row by row would shift it past
+                // its end.
+                if !inner.instances.is_empty() {
+                    inner.layout_state.offset += count;
+                }
                 self.is_dirty.set(true);
                 for c in inner.instances.iter_mut() {
                     c.0 = RepeatedInstanceState::Dirty;
