@@ -2375,6 +2375,9 @@ fn build(l: &mut Loader) {
         callback edited;
         /// The cursor was moved to the new (x, y) position described by the `Point` argument.
         callback cursor-position-changed(position: Point);
+        /// Invoked when a paste finds no text on the system clipboard, by a key, by a menu or by `paste()`, so that
+        /// the application can look there for something else it takes, such as an image.
+        callback paste-without-text;
         /// Invoked when a key is pressed, the argument is a <Link type="KeyEvent" /> struct. Use this callback to
         /// handle keys before `TextInput` does. Return `accept` to indicate that you've handled the event, or return
         /// `reject` to let `TextInput` handle it.

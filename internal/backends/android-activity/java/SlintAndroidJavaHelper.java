@@ -703,7 +703,9 @@ public class SlintAndroidJavaHelper {
                 ClipboardManager clipboard = (ClipboardManager) mActivity.getSystemService(Context.CLIPBOARD_SERVICE);
                 if (clipboard.hasPrimaryClip()) {
                     ClipData.Item item = clipboard.getPrimaryClip().getItemAt(0);
-                    return item.getText().toString();
+                    // An image copied is a URI, with no text.
+                    CharSequence text = item.getText();
+                    return text == null ? "" : text.toString();
                 }
                 return "";
             }

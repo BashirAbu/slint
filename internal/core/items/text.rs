@@ -847,6 +847,7 @@ pub struct TextInput {
     pub accepted: Callback<VoidArg>,
     pub cursor_position_changed: Callback<PointArg>,
     pub edited: Callback<VoidArg>,
+    pub paste_without_text: Callback<VoidArg>,
     pub key_pressed: Callback<KeyEventArg, EventResult>,
     pub key_released: Callback<KeyEventArg, EventResult>,
     pub single_line: Property<bool>,
@@ -2165,13 +2166,22 @@ impl TextInput {
         self_rc: &ItemRc,
         clipboard: Clipboard,
     ) {
-        if let Some(text) = WindowInner::from_pub(window_adapter.window())
+        let says_so = matches!(clipboard, Clipboard::DefaultClipboard);
+        // A platform may answer an empty text for a clipboard that holds none.
+        let text = WindowInner::from_pub(window_adapter.window())
             .context()
             .platform()
             .clipboard_text(clipboard)
-        {
-            self.preedit_text.set(Default::default());
-            self.insert(&text, window_adapter, self_rc);
+            .filter(|text| !text.is_empty());
+        match text {
+            Some(text) => {
+                self.preedit_text.set(Default::default());
+                self.insert(&text, window_adapter, self_rc);
+            }
+            None if says_so => {
+                Self::FIELD_OFFSETS.paste_without_text().apply_pin(self).call(&());
+            }
+            None => {}
         }
     }
 
