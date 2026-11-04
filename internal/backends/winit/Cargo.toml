@@ -175,3 +175,7 @@ harness = false
 [[test]]
 name = "hide_with_external_reference"
 harness = false
+
+[[test]]
+name = "cursor_left_keeps_a_dispatched_press"
+harness = false

@@ -1501,7 +1501,11 @@ impl WinitWindowAdapter {
             }
             WinitWindowEvent::CursorLeft { .. } => {
                 // On the html canvas, we don't get the mouse move or release event when outside the canvas. So we have no choice but canceling the event
-                if cfg!(target_arch = "wasm32") || !self.pressed.get() {
+                // A press dispatched to the window has no cursor behind it, so this one leaving
+                // does not end it.
+                if cfg!(target_arch = "wasm32")
+                    || !(self.pressed.get() || runtime_window.has_mouse_grab())
+                {
                     self.pressed.set(false);
                     self.dispatch_internal_event(BackendMouseEvent::Exit);
                 }

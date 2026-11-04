@@ -1698,6 +1698,15 @@ impl WindowInner {
         }
     }
 
+    /// Whether an item has the mouse grab, as it does while pressed, however the press came: from
+    /// the windowing system or through [`Window::dispatch_event`](crate::api::Window::dispatch_event).
+    pub fn has_mouse_grab(&self) -> bool {
+        let state = self.mouse_input_state.take();
+        let grabbed = state.grabbed;
+        self.mouse_input_state.set(state);
+        grabbed
+    }
+
     /// Returns true of the window is the active window. That typically implies having the
     /// keyboard focus, except when a popup is shown and temporarily takes the focus.
     pub fn active(&self) -> bool {

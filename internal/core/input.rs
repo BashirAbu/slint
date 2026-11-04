@@ -1419,7 +1419,7 @@ pub struct MouseInputState {
     /// Offset to apply to the first item of the stack (used if there is a popup)
     pub(crate) offset: LogicalPoint,
     /// true if the top item of the stack has the mouse grab
-    grabbed: bool,
+    pub(crate) grabbed: bool,
     /// When this is Some, it means we are in the middle of a drag-drop operation and it contains the dragged data.
     /// The `position` field has no signification
     pub(crate) drag_data: Option<DragData>,
