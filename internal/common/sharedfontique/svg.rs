@@ -138,11 +138,10 @@ where
               exclude: &[fontdb::ID],
               db: &mut Arc<fontdb::Database>|
               -> Option<fontdb::ID> {
-            // Slint's fallback chain, plus emoji.
+            // Slint's fallback chain, which ends with emoji.
             let families: Vec<fontique::QueryFamily> = super::FALLBACK_FAMILIES
                 .iter()
                 .copied()
-                .chain(std::iter::once(fontique::GenericFamily::Emoji))
                 .map(fontique::QueryFamily::Generic)
                 .collect();
             let found = find_font(&families, fontique::Attributes::default(), Some(c))?;

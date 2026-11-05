@@ -360,9 +360,7 @@ fn get_fallback_fonts() -> Vec<Font> {
     let mut collection = sharedfontique::create_collection(false);
     let mut query = collection.query();
     query.set_families(
-        sharedfontique::FALLBACK_FAMILIES.into_iter().map(fontique::QueryFamily::Generic).chain(
-            core::iter::once(fontique::QueryFamily::Generic(fontique::GenericFamily::Emoji)),
-        ),
+        sharedfontique::FALLBACK_FAMILIES.into_iter().map(fontique::QueryFamily::Generic),
     );
 
     query.matches_with(|query_font| {

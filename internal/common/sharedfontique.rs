@@ -50,6 +50,18 @@ pub fn create_collection(shared: bool) -> Collection {
         }
     }
 
+    // The platform's symbol fonts after its emoji font, for the symbols the emoji font lacks, such
+    // as Segoe UI Emoji's ★; after it, so that a pictograph both have is drawn in colour.
+    #[cfg(not(any(target_family = "wasm", target_os = "nto")))]
+    {
+        const SYMBOLS: [&str; 4] =
+            ["Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols", "Noto Sans Symbols 2"];
+        let emoji = fontique::GenericFamily::Emoji;
+        let mut families: Vec<_> = collection.generic_families(emoji).collect();
+        families.extend(SYMBOLS.iter().filter_map(|name| collection.family_id(name)));
+        collection.set_generic_families(emoji, families.into_iter());
+    }
+
     let mut registered_paths: HashSet<std::path::PathBuf> = HashSet::new();
     let mut register_path =
         |path: std::path::PathBuf,
@@ -185,10 +197,13 @@ impl std::ops::DerefMut for Collection {
     }
 }
 
-pub const FALLBACK_FAMILIES: [fontique::GenericFamily; 2] = [
+pub const FALLBACK_FAMILIES: [fontique::GenericFamily; 3] = [
     // FemtoVG renderer needs SansSerif first, as it has difficulties rendering from SystemUi on macOS
     fontique::GenericFamily::SansSerif,
     fontique::GenericFamily::SystemUi,
+    // The pictographs and symbols that sans-serif fonts lack, with the symbol fonts that
+    // `create_collection` puts after the emoji font.
+    fontique::GenericFamily::Emoji,
 ];
 
 /// Wrapper around fontique::Blob to permit use of the blob as a key in the cache in the different renderers,

@@ -57,6 +57,54 @@ fn visual_line_count(text: &str) -> usize {
 }
 
 #[test]
+fn a_character_no_sans_serif_font_has_is_drawn_from_the_emoji_family() {
+    // The screenshot tests' fonts: their Noto Sans lacks the black circle, which their one-glyph Noto
+    // Sans Symbols 2 has, here standing for the platform's emoji font.
+    let mut font_ctx = parley::FontContext {
+        collection: fontique::Collection::new(fontique::CollectionOptions {
+            system_fonts: false,
+            ..Default::default()
+        }),
+        source_cache: Default::default(),
+    };
+    for (data, generic) in [
+        (
+            &include_bytes!("../../../../tests/screenshots/fonts/NotoSans-Regular.ttf")[..],
+            fontique::GenericFamily::SansSerif,
+        ),
+        (
+            &include_bytes!("../../../../tests/screenshots/fonts/NotoSansSymbols2-Regular.ttf")[..],
+            fontique::GenericFamily::Emoji,
+        ),
+    ] {
+        let families =
+            font_ctx.collection.register_fonts(fontique::Blob::new(Arc::new(data)), None);
+        font_ctx.collection.set_generic_families(generic, families.iter().map(|(id, _)| *id));
+    }
+    let builder = super::shaping::LayoutWithoutLineBreaksBuilder::new(
+        Some(FontRequest::default()),
+        TextWrap::NoWrap,
+        None,
+        ScaleFactor::new(1.0),
+    );
+    let text = PlainOrStyledText::Plain("a\u{25CF}".into());
+    let paragraphs = create_text_paragraphs(&builder, &mut font_ctx, text, Color::default());
+    let options = LayoutOptions::default();
+    let layout = layout(&builder, &mut font_ctx, paragraphs, ScaleFactor::new(1.0), options, None);
+    let mut glyphs = Vec::new();
+    for line in layout.paragraphs.iter().flat_map(|p| p.layout.lines()) {
+        for item in line.items() {
+            if let parley::PositionedLayoutItem::GlyphRun(run) = item {
+                glyphs.extend(run.glyphs().map(|glyph| glyph.id));
+            }
+        }
+    }
+    // Glyph 0 is a font's .notdef, the box drawn for a character it lacks.
+    assert_eq!(glyphs.len(), 2, "{glyphs:?}");
+    assert!(glyphs.iter().all(|id| *id != 0), "{glyphs:?}");
+}
+
+#[test]
 fn bidi_selection_spans_are_ascending_in_x() {
     // The segment walk in `draw_glyph_run_with_selection` steps through a line's spans left to
     // right, so they have to arrive ascending in x. A bidi line is where that could plausibly
