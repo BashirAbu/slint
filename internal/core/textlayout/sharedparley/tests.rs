@@ -419,3 +419,21 @@ fn an_overflowing_left_to_right_line_is_elided_on_the_right() {
         ellipses[0]
     );
 }
+
+#[test]
+fn a_right_to_left_line_after_a_number_stands_whole_in_a_left_aligned_box_it_fits() {
+    // The space after the number starts the line's right-to-left run. Parley hangs it as the
+    // line's trailing whitespace, so a left-aligned line started left of zero, and was elided as
+    // if it overflowed, however much room it had.
+    let text = "2 \u{5d0}\u{5d1}\u{5d2} \u{5d3}\u{5d4}\u{5d5}";
+    let whole = elided(text, 300.0, TextHorizontalAlignment::Right);
+    let (whole, _) = elided_first_line(&whole);
+    for width in [120.0, 300.0] {
+        let layout = elided(text, width, TextHorizontalAlignment::Left);
+        let (kept, ellipses) = elided_first_line(&layout);
+        assert_eq!(kept.len(), whole.len(), "{width}: every glyph is kept");
+        assert!(ellipses.is_empty(), "{width}: nothing is cut off, so no ellipsis");
+        let first = kept.iter().map(|(left, _)| *left).fold(f32::INFINITY, f32::min);
+        assert!((0.0..1.0).contains(&first), "{width}: the line starts at the left, not at {first}");
+    }
+}

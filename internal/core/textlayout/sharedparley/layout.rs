@@ -173,6 +173,7 @@ pub(super) fn layout(
     for para in paragraphs.iter_mut() {
         para.layout.break_all_lines(max_physical_width.map(|width| width.get()));
         para.layout.align(inputs.alignment, parley::AlignmentOptions::default());
+        start_left_aligned_line_at_zero(para, inputs.alignment, max_physical_width);
 
         para.y = PhysicalLength::new(para_y);
         para_y += para.layout.height();
@@ -238,6 +239,33 @@ pub(super) fn layout(
         line_limit_cut,
         line_breaking_inputs: inputs,
         broke_lines: true,
+    }
+}
+
+/// Parley hangs a space that starts a right-to-left run as trailing whitespace when that run is
+/// the line's leftmost, as in a number followed by Arabic words: their logical start is not the
+/// line's end, but a left-aligned line still starts that far left of zero, cut off at the box's
+/// edge and taken for one that overflows. Aligned right in a box of exactly its width, a line that
+/// fits starts at zero, and every use of its geometry agrees. A wrapped paragraph keeps Parley's
+/// offsets, as one width cannot suit each of its lines.
+fn start_left_aligned_line_at_zero(
+    para: &mut TextParagraph,
+    alignment: parley::Alignment,
+    max_physical_width: Option<PhysicalLength>,
+) {
+    if alignment != parley::Alignment::Left || !para.layout.is_rtl() {
+        return;
+    }
+    if para.layout.lines().len() != 1 {
+        return;
+    }
+    let Some(line) = para.layout.lines().next() else { return };
+    let metrics = line.metrics();
+    let (advance, hung) = (metrics.advance, metrics.trailing_whitespace);
+    let fits = max_physical_width.is_none_or(|width| advance <= width.get());
+    if hung > 0.0 && fits {
+        para.layout.break_all_lines(Some(advance.ceil()));
+        para.layout.align(parley::Alignment::Right, parley::AlignmentOptions::default());
     }
 }
 
