@@ -101,6 +101,9 @@ enum Stage {
     Link,
     /// A finger at rest: the long press selects, and a lift before it is a tap.
     Finger,
+    /// A finger on a text in a Flickable of its own that scrolls: until the long press, the finger
+    /// is that Flickable's to swipe.
+    Held,
     /// Moving the pointer moves the end of the selection.
     Selecting,
 }
@@ -160,17 +163,40 @@ fn styled(item: &ItemRc) -> Option<VRcMapped<ItemTreeVTable, StyledTextItem>> {
 
 /// The texts that can be selected, in reading order: scrolled out of view counts, hidden does not.
 fn texts_under(area: &ItemRc) -> Vec<ItemRc> {
+    let mut texts = every_text_under(area);
+    texts.retain(|text| {
+        styled(text).is_some_and(|text| {
+            text.as_pin_ref().text().paragraphs.iter().any(|paragraph| !paragraph.text.is_empty())
+        })
+    });
+    texts
+}
+
+/// The texts under the area in reading order, those with nothing in them too: a copy keeps the
+/// place of an empty one that has a separator, such as a table's empty cell.
+fn every_text_under(area: &ItemRc) -> Vec<ItemRc> {
     let mut texts = Vec::new();
     area.visit_descendants::<()>(|item| {
-        if styled(item).is_some_and(|text| {
-            text.as_pin_ref().text().paragraphs.iter().any(|paragraph| !paragraph.text.is_empty())
-        }) && item.is_visible_or_clipped_by_flickable()
-        {
+        if styled(item).is_some() && item.is_visible_or_clipped_by_flickable() {
             texts.push(item.clone());
         }
         ControlFlow::Continue(())
     });
     texts
+}
+
+/// Whether a Flickable between the area and `text` can scroll, as a wide table's does.
+fn pans_under(area: &ItemRc, text: &ItemRc) -> bool {
+    let mut parent = text.parent_item(ParentItemTraversalMode::StopAtPopups);
+    while let Some(item) = parent.filter(|item| item != area) {
+        if let Some(flickable) = item.downcast::<Flickable>()
+            && super::flickable::FlickableData::can_pan(flickable.as_pin_ref(), &item)
+        {
+            return true;
+        }
+        parent = item.parent_item(ParentItemTraversalMode::StopAtPopups);
+    }
+    false
 }
 
 /// The text exactly under `position`, in the area's coordinates, and the position in that text's.
@@ -246,8 +272,9 @@ fn is_link_at(
     false
 }
 
-/// The position in `texts` a pointer at `window` stands for: the text it is over or beside, else the
-/// start of the next one below it, else the end of the last.
+/// The position in `texts` a pointer at `window` stands for: the text it is over, else the nearest
+/// one level with it, as in a table's row, else the start of the next one below it, else the end of
+/// the last.
 fn nearest_position(
     window_adapter: &Rc<dyn WindowAdapter>,
     texts: &[ItemRc],
@@ -255,8 +282,14 @@ fn nearest_position(
 ) -> Option<(usize, usize)> {
     let rect_of = |text: &ItemRc| LogicalRect::new(origin_of(text), text.geometry().size);
     let over = texts.iter().position(|text| rect_of(text).contains(window));
+    let beside = || {
+        let away = |rect: LogicalRect| (rect.min_x() - window.x).max(window.x - rect.max_x());
+        let level = texts.iter().enumerate().map(|(index, text)| (index, rect_of(text)));
+        let level = level.filter(|(_, rect)| (rect.min_y()..rect.max_y()).contains(&window.y));
+        level.min_by(|(_, a), (_, b)| away(*a).total_cmp(&away(*b))).map(|(index, _)| index)
+    };
     let below = || texts.iter().position(|text| window.y < rect_of(text).max_y());
-    let Some(index) = over.or_else(below) else {
+    let Some(index) = over.or_else(beside).or_else(below) else {
         let last = texts.len().checked_sub(1)?;
         return Some((last, raw_text(&texts[last]).len()));
     };
@@ -318,6 +351,24 @@ impl Item for SelectionArea {
                     // what nothing takes comes back to `input_event`.
                     return InputEventFilterResult::ForwardEvent;
                 };
+                let finger = event.is_from_touch() && *button == PointerEventButton::Left;
+                if !is_link_at(window_adapter, &text, inside)
+                    && finger
+                    && pans_under(self_rc, &text)
+                {
+                    let window = window_of(position);
+                    with_state(|s| {
+                        s.pressed = Some(Pressed {
+                            area: self_rc.downgrade(),
+                            stage: Stage::Held,
+                            from: window,
+                            now: window,
+                            unit: Unit::Word,
+                        })
+                    });
+                    self.wait_for_long_press(window_adapter, self_rc);
+                    return InputEventFilterResult::ForwardAndInterceptGrab;
+                }
                 if !is_link_at(window_adapter, &text, inside) {
                     return InputEventFilterResult::Intercept;
                 }
@@ -334,6 +385,25 @@ impl Item for SelectionArea {
                     });
                 }
                 InputEventFilterResult::ForwardEvent
+            }
+            // The finger swipes the Flickable, unless it rested and now selects.
+            MouseEvent::Moved { position, .. } if stage_of(self_rc) == Some(Stage::Held) => {
+                let window = window_of(position);
+                let moved = with_state(|s| {
+                    s.pressed.as_mut().map_or(0 as Coord, |pressed| {
+                        pressed.now = window;
+                        (window - pressed.from).length()
+                    })
+                });
+                if moved > LONG_PRESS_SLOP {
+                    let _timer = with_state(|s| s.long_press.take());
+                }
+                InputEventFilterResult::ForwardAndInterceptGrab
+            }
+            MouseEvent::Moved { .. } | MouseEvent::Released { .. }
+                if event.is_from_touch() && stage_of(self_rc) == Some(Stage::Selecting) =>
+            {
+                InputEventFilterResult::Intercept
             }
             MouseEvent::Moved { position, .. } => {
                 if stage_of(self_rc) == Some(Stage::Link) {
@@ -358,8 +428,14 @@ impl Item for SelectionArea {
                 }
             }
             MouseEvent::Released { .. } => {
-                if stage_of(self_rc) == Some(Stage::Link) {
+                let stage = stage_of(self_rc);
+                // A tap clears the selection, as on any text; a swipe leaves it.
+                let tapped = stage == Some(Stage::Held) && with_state(|s| s.long_press.is_some());
+                if matches!(stage, Some(Stage::Link | Stage::Held)) {
                     release_pointer();
+                }
+                if tapped {
+                    self.clear_selection(window_adapter, self_rc);
                 }
                 InputEventFilterResult::ForwardEvent
             }
@@ -408,6 +484,10 @@ impl Item for SelectionArea {
                 let Some(stage) = stage_of(self_rc) else {
                     return InputEventResult::EventAccepted;
                 };
+                // The finger is the Flickable's, which may not have it yet.
+                if stage == Stage::Held {
+                    return InputEventResult::EventIgnored;
+                }
                 let window = window_of(position);
                 let moved = with_state(|s| {
                     s.pressed.as_mut().map_or(0 as Coord, |pressed| {
@@ -416,7 +496,7 @@ impl Item for SelectionArea {
                     })
                 });
                 match stage {
-                    Stage::Menu => {}
+                    Stage::Menu | Stage::Held => {}
                     Stage::Finger => {
                         if moved > LONG_PRESS_SLOP {
                             let _timer = with_state(|s| s.long_press.take());
@@ -544,18 +624,29 @@ impl ItemConsts for SelectionArea {
 }
 
 impl SelectionArea {
-    /// Copies the selected text to the clipboard, a blank line between two texts. With nothing
-    /// selected, the clipboard stays as it was.
+    /// Copies the selected text to the clipboard. Before each text after the first stands its
+    /// `selection-separator`, or a blank line when it has none; those of the texts with nothing
+    /// selected count once something after them is copied, so an empty cell keeps its column. With
+    /// nothing selected, the clipboard stays as it was.
     pub fn copy(self: Pin<&Self>, window_adapter: &Rc<dyn WindowAdapter>, self_rc: &ItemRc) {
-        let mut copied = String::new();
-        for text in texts_under(self_rc) {
+        let (mut copied, mut between) = (String::new(), String::new());
+        for text in every_text_under(self_rc) {
             let Some(item) = styled(&text) else { continue };
-            let range = item.as_pin_ref().selected_range();
-            if !range.is_empty() {
-                if !copied.is_empty() {
-                    copied.push_str("\n\n");
+            let item = item.as_pin_ref();
+            let (raw, separator) = (raw_text(&text), item.selection_separator());
+            if raw.is_empty() && separator.is_empty() {
+                continue;
+            }
+            if !copied.is_empty() {
+                match separator.is_empty() {
+                    true => between = String::from("\n\n"),
+                    false => between.push_str(&separator),
                 }
-                copied.push_str(&raw_text(&text)[range]);
+            }
+            let range = item.selected_range();
+            if !range.is_empty() {
+                copied.push_str(&core::mem::take(&mut between));
+                copied.push_str(&raw[range]);
             }
         }
         if !copied.is_empty() {

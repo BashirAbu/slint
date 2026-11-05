@@ -169,12 +169,12 @@ macro_rules! members {
     ($l:ident $e:ident $(#![doc = $s:literal])*) => { $e.section(docs!($($s)*)); };
     // property
     ($l:ident $e:ident $(#![doc = $s:literal])* $(#[doc = $d:literal])* $(@$mod:ident)*
-        $vis:ident $(- $vis2:ident)? property < $($ty:tt)-+ > $($name:tt)-+ $(: $default:tt $(. $($dv:tt)-+)? $($hex:literal)?)? $(<=> $($alias:tt)-+)? ;
+        $vis:ident $(- $vis2:ident)? property < $($ty:tt)-+ > $($name:tt)-+ $(: $default:tt $($hex:literal)? $(. $($dv:tt)-+)?)? $(<=> $($alias:tt)-+)? ;
         $($rest:tt)*) => {
         $e.section(docs!($($s)*));
         {
             let ty = $l.ty(stringify!($($ty)-+));
-            let default = default(&ty, stringify!($($default $(. $($dv)-+)? $($hex)?)?));
+            let default = default(&ty, stringify!($($default $($hex)? $(. $($dv)-+)?)?));
             $e.property(stringify!($($name)-+), ty, visibility!($vis $(- $vis2)?), default,
                 None $(.or(Some(stringify!($($alias)-+))))?, &[$(stringify!($mod)),*], docs!($($d)*));
         }
@@ -1197,8 +1197,16 @@ fn build(l: &mut Loader) {
         in property <string> default-font-family;
         /// The default font size used to render the text, when no size is specified via markup. If unset (or zero), the value falls back to the enclosing `Window`'s `default-font-size`.
         in property <length> default-font-size;
+        /// The default weight of the font, when no weight is specified via markup: 400 is regular and 700 bold. If unset (or zero), the value falls back to the enclosing `Window`'s `default-font-weight`.
+        in property <int> default-font-weight;
         /// The horizontal alignment of the text.
         in property <TextHorizontalAlignment> horizontal-alignment;
+        /// The way the text wraps when it does not fit its width.
+        /// \default word-wrap
+        in property <TextWrap> wrap: TextWrap.word-wrap;
+        /// What happens to the text that does not fit: clipped, or cut short with `…`.
+        /// \default clip
+        in property <TextOverflow> overflow;
         /// The color used for rendering links in the text.
         in property <color> link-color: #00f;
         /// The factor of the font's natural line height that lines are spaced by.
@@ -1211,6 +1219,10 @@ fn build(l: &mut Loader) {
         in property <color> selection-background-color; // StyleMetrics.selection-background set in apply_default_properties_from_style
         /// The foreground color of what a `SelectionArea` selects of the text.
         in property <color> selection-foreground-color; // StyleMetrics.selection-foreground set in apply_default_properties_from_style
+        /// What a `SelectionArea` puts before this text when it copies something before it too, such as a tab between the cells
+        /// of a table's row and a line break before a row's first cell. A text that sets one counts in a copy even with nothing
+        /// in it, so an empty cell keeps its place. Empty, it is a blank line.
+        in property <string> selection-separator;
         /// The maximum number of lines to display. Wrapped lines count towards the limit.
         /// Values less than or equal to zero don't limit the number of lines.
         /// \default 0

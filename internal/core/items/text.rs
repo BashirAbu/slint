@@ -244,9 +244,12 @@ pub struct StyledTextItem {
     pub default_color: Property<Brush>,
     pub default_font_size: Property<LogicalLength>,
     pub default_font_family: Property<SharedString>,
+    pub default_font_weight: Property<i32>,
     pub horizontal_alignment: Property<TextHorizontalAlignment>,
     pub vertical_alignment: Property<TextVerticalAlignment>,
     pub max_lines: Property<i32>,
+    pub wrap: Property<TextWrap>,
+    pub overflow: Property<TextOverflow>,
     pub link_clicked: Callback<StringArg>,
     pub hovered_link: Property<SharedString>,
     pub link_pointer_event: Callback<PointerEventArg>,
@@ -257,6 +260,8 @@ pub struct StyledTextItem {
     pub has_selection: Property<bool>,
     pub selection_background_color: Property<Color>,
     pub selection_foreground_color: Property<Color>,
+    /// What a `SelectionArea`'s copy puts before this text, when it copies something before it too.
+    pub selection_separator: Property<SharedString>,
     pub line_height_factor: Property<f32>,
     pub cached_rendering_data: CachedRenderingData,
 }
@@ -423,7 +428,7 @@ impl HasFont for StyledTextItem {
         crate::items::WindowItem::resolved_font_request(
             self_rc,
             self.default_font_family(),
-            Default::default(),
+            self.default_font_weight(),
             self.default_font_size(),
             Default::default(),
             self.line_height_factor(),
@@ -462,11 +467,11 @@ impl RenderText for StyledTextItem {
     }
 
     fn wrap(self: Pin<&Self>) -> TextWrap {
-        TextWrap::WordWrap
+        self.wrap()
     }
 
     fn overflow(self: Pin<&Self>) -> TextOverflow {
-        TextOverflow::Clip
+        self.overflow()
     }
 
     fn is_markdown(self: Pin<&Self>) -> bool {

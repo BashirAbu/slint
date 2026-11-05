@@ -1,0 +1,211 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A SelectionArea over a table of StyledText cells, which separate themselves in a copy: a tab between
+// the cells of a row and a line break before each row's first, an empty cell keeping its column. A
+// pointer in the gap between two cells stands for the nearer one. A finger swipes a table that scrolls
+// sideways, and selects once it rests; the wheel scrolls it too.
+export component TestCase inherits Window {
+    width: 200phx;
+    height: 150phx;
+    default-font-size: 10phx;
+
+    in-out property <length> table-x <=> table.content-x;
+    out property <bool> has-selection: area.has-selection;
+    out property <int> menus;
+    out property <bool> one-line: unwrapped.preferred-height < wrapped.preferred-height;
+    out property <bool> bolder: bold.preferred-width > regular.preferred-width;
+
+    public function copied() -> string {
+        pasted.text = "";
+        area.copy();
+        pasted.paste();
+        pasted.text
+    }
+    public function select-everything() {
+        area.select-all();
+    }
+    public function clear() {
+        area.clear-selection();
+    }
+
+    area := SelectionArea {
+        x: 0;
+        y: 0;
+        width: 200phx;
+        height: 100phx;
+        menu-requested => {
+            root.menus += 1;
+        }
+
+        StyledText {
+            x: 0;
+            y: 0;
+            width: 200phx;
+            height: 16phx;
+            text: @markdown("before");
+        }
+
+        table := Flickable {
+            x: 0;
+            y: 20phx;
+            width: 200phx;
+            height: 40phx;
+            content-width: 300phx;
+            content-height: 40phx;
+
+            for row[r] in [["a1", "b1", "c1"], ["a2", "", "c2"]]: Rectangle {
+                y: r * 20phx;
+                width: 300phx;
+                height: 20phx;
+                for cell[c] in row: StyledText {
+                    x: c * 70phx;
+                    width: 60phx;
+                    height: 16phx;
+                    text: @markdown("\{cell}");
+                    wrap: no-wrap;
+                    overflow: elide;
+                    selection-separator: c > 0 ? "\u{9}" : r > 0 ? "\n" : "";
+                }
+            }
+        }
+
+        StyledText {
+            x: 0;
+            y: 64phx;
+            width: 200phx;
+            height: 16phx;
+            text: @markdown("after");
+        }
+    }
+
+    pasted := TextInput {
+        single-line: false;
+        x: 0;
+        y: 100phx;
+        width: 200phx;
+        height: 16phx;
+    }
+
+    // Out of the area: what wrap and default-font-weight change in the layout.
+    wrapped := StyledText {
+        x: 0;
+        y: 120phx;
+        width: 30phx;
+        text: @markdown("one two three four");
+    }
+    unwrapped := StyledText {
+        x: 40phx;
+        y: 120phx;
+        width: 30phx;
+        text: @markdown("one two three four");
+        wrap: no-wrap;
+        overflow: elide;
+    }
+    regular := StyledText {
+        x: 80phx;
+        y: 120phx;
+        text: @markdown("WWWW");
+    }
+    bold := StyledText {
+        x: 140phx;
+        y: 120phx;
+        text: @markdown("WWWW");
+        default-font-weight: 700;
+    }
+
+    out property <bool> test: true;
+}
+
+/*
+```rust
+use slint::{platform::PointerEventButton, platform::WindowEvent, LogicalPosition};
+use slint_testing::{InternalEvent, LogicalPoint, TouchPhase};
+
+let instance = TestCase::new().unwrap();
+let window = instance.window();
+let at = |x: f32, y: f32| LogicalPosition::new(x, y);
+let press = |x, y| window.dispatch_event(WindowEvent::PointerPressed { position: at(x, y), button: PointerEventButton::Left });
+let release = |x, y| window.dispatch_event(WindowEvent::PointerReleased { position: at(x, y), button: PointerEventButton::Left });
+let go = |x, y| window.dispatch_event(WindowEvent::PointerMoved { position: at(x, y) });
+let settle = || slint_testing::mock_elapsed_time(1000);
+let drag = |from: (f32, f32), to: (f32, f32)| {
+    press(from.0, from.1);
+    go((from.0 + to.0) / 2., (from.1 + to.1) / 2.);
+    go(to.0, to.1);
+    release(to.0, to.1);
+    settle();
+};
+let finger = |x: f32, y: f32, phase| window.dispatch_event(WindowEvent::internal(InternalEvent::Touch { id: 3, position: LogicalPoint::new(x, y), phase }));
+
+assert!(instance.get_one_line());
+assert!(instance.get_bolder());
+
+// All of it: a blank line around the table, its cells by tabs and its rows by lines.
+instance.invoke_select_everything();
+assert_eq!(instance.invoke_copied(), "before\n\na1\tb1\tc1\na2\t\tc2\n\nafter");
+instance.invoke_clear();
+
+// Along a row, and across rows.
+drag((1., 28.), (129., 28.));
+assert_eq!(instance.invoke_copied(), "a1\tb1");
+drag((71., 28.), (59., 48.));
+assert_eq!(instance.invoke_copied(), "b1\tc1\na2");
+
+// An empty cell keeps its column.
+drag((1., 48.), (199., 48.));
+assert_eq!(instance.invoke_copied(), "a2\t\tc2");
+
+// In the gap after a cell, the drag ends at that cell's end, not at the row's first.
+drag((71., 28.), (133., 28.));
+assert_eq!(instance.invoke_copied(), "b1");
+
+// A finger swipes the table sideways and selects nothing.
+instance.invoke_clear();
+finger(100., 28., TouchPhase::Started);
+finger(90., 28., TouchPhase::Moved);
+slint_testing::mock_elapsed_time(16);
+finger(50., 28., TouchPhase::Moved);
+assert!(instance.get_table_x() < 0., "{}", instance.get_table_x());
+slint_testing::mock_elapsed_time(1000);
+assert!(!instance.get_has_selection());
+finger(50., 28., TouchPhase::Ended);
+slint_testing::mock_elapsed_time(1000);
+assert!(!instance.get_has_selection());
+assert_eq!(instance.get_menus(), 0);
+instance.set_table_x(0.);
+
+// A finger that rests selects the word under it, and asks for the menu when it lifts.
+finger(141., 28., TouchPhase::Started);
+slint_testing::mock_elapsed_time(100);
+slint_testing::mock_elapsed_time(450);
+assert_eq!(instance.invoke_copied(), "c1");
+finger(141., 28., TouchPhase::Ended);
+assert_eq!(instance.get_menus(), 1);
+slint_testing::mock_elapsed_time(1000);
+
+// A rest and then a drag goes on across the cells, and scrolls nothing.
+finger(1., 28., TouchPhase::Started);
+slint_testing::mock_elapsed_time(100);
+slint_testing::mock_elapsed_time(450);
+assert_eq!(instance.invoke_copied(), "a1");
+finger(199., 48., TouchPhase::Moved);
+assert_eq!(instance.invoke_copied(), "a1\tb1\tc1\na2\t\tc2");
+assert_eq!(instance.get_table_x(), 0.);
+finger(199., 48., TouchPhase::Ended);
+assert_eq!(instance.get_menus(), 2);
+slint_testing::mock_elapsed_time(1000);
+
+// A tap clears it.
+finger(100., 28., TouchPhase::Started);
+slint_testing::mock_elapsed_time(150);
+finger(100., 28., TouchPhase::Ended);
+slint_testing::mock_elapsed_time(1000);
+assert!(!instance.get_has_selection());
+assert_eq!(instance.get_menus(), 2);
+
+// The wheel scrolls the table sideways.
+window.dispatch_event(WindowEvent::PointerScrolled { position: at(100., 28.), delta_x: -40., delta_y: 0. });
+assert!(instance.get_table_x() < 0.);
+```
+*/

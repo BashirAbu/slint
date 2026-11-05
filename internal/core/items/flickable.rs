@@ -821,7 +821,7 @@ impl FlickableData {
     /// Whether the flickable has any content to pan in either direction, regardless of mouse movement.
     /// Used to decide whether a press that no descendant claimed is worth grabbing,
     /// mirroring the direction check wheel events already get in `handle_mouse_filter`.
-    fn can_pan(flick: Pin<&Flickable>, flick_rc: &ItemRc) -> bool {
+    pub(super) fn can_pan(flick: Pin<&Flickable>, flick_rc: &ItemRc) -> bool {
         let flickable_geometry = Flickable::geometry_without_virtual_keyboard(flick_rc);
         let flickable_width = flickable_geometry.width_length();
         let flickable_height = flickable_geometry.height_length();
