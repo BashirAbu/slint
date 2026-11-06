@@ -214,6 +214,25 @@ fn a_list_items_wrapped_lines_stand_under_its_words_not_its_marker() {
 }
 
 #[test]
+fn a_plain_texts_line_that_looks_like_a_list_item_does_not_indent_the_next() {
+    // A styled text made from "1. yes" and "2. Packet" on two lines once indented its second line
+    // by the first's marker, as one list item's wrapped line, and wrapped it at the width they fit.
+    let mut font_ctx = test_font_context();
+    let text = crate::styled_text::StyledText::from_plain_text("1. yes\n2. Packet");
+    assert_eq!(crate::styled_text::get_raw_text(&text), "1. yes\n2. Packet");
+    let builder = super::shaping::wrap_builder_for_tests();
+    let plain = PlainOrStyledText::Styled(text);
+    let mut paragraphs = create_text_paragraphs(&builder, &mut font_ctx, plain, Color::default());
+    assert_eq!(paragraphs.len(), 2);
+    for paragraph in &mut paragraphs {
+        paragraph.layout.break_all_lines(Some(1000.));
+        paragraph.layout.align(parley::Alignment::Start, Default::default());
+        let offsets: Vec<f32> = paragraph.layout.lines().map(|line| line.metrics().offset).collect();
+        assert_eq!(offsets, [0.], "one line each, flush");
+    }
+}
+
+#[test]
 fn test_crlf_line_count() {
     assert_eq!(visual_line_count("hello\r\nworld"), visual_line_count("hello\nworld"));
     assert_eq!(visual_line_count("hello\r\nworld"), 2);

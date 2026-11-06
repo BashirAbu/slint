@@ -42,11 +42,10 @@ impl std::error::Error for StyledTextFromMarkdownError {}
 #[cfg(feature = "std")]
 impl StyledText {
     /// Creates styled text from plain text without applying markdown parsing.
+    /// Each line is a paragraph of its own, as markdown's are.
     pub fn from_plain_text(text: &str) -> Self {
-        Self {
-            paragraphs: [i_slint_common::styled_text::paragraph_from_plain_text(text.into())]
-                .into(),
-        }
+        let line = |line: &str| i_slint_common::styled_text::paragraph_from_plain_text(line.into());
+        Self { paragraphs: text.split('\n').map(line).collect() }
     }
 
     /// Parses markdown into styled text.
