@@ -866,6 +866,8 @@ pub struct TextInput {
     preferred_x_pos: Cell<Coord>,
     /// 0 = not pressed, 1 = single press, 2 = double clicked+press , ...
     pressed: Cell<u8>,
+    /// Where the pointer was pressed: a move that has not left it is no drag.
+    pressed_at: Cell<LogicalPoint>,
     undo_items: Cell<SharedVector<UndoItem>>,
     redo_items: Cell<SharedVector<UndoItem>>,
     /// Mirror of `text` as of the last internal edit. Used by the change handler installed
@@ -981,6 +983,7 @@ impl Item for TextInput {
                     self.byte_offset_for_position(*position, window_adapter, self_rc);
                 let clicked_offset = clicked_offset as i32;
                 self.as_ref().pressed.set((click_count % 3) + 1);
+                self.as_ref().pressed_at.set(*position);
 
                 if !window_adapter.window().0.context().0.modifiers.get().shift() {
                     self.as_ref().anchor_position_byte_offset.set(clicked_offset);
@@ -1034,6 +1037,11 @@ impl Item for TextInput {
             MouseEvent::Exit => self.as_ref().pressed.set(0),
             MouseEvent::Moved { position, .. } => {
                 let pressed = self.as_ref().pressed.get();
+                if pressed > 0 && *position == self.as_ref().pressed_at.get() {
+                    // A selection made while the pointer is down, such as a select-all on focus,
+                    // stays until the pointer actually moves.
+                    return InputEventResult::GrabMouse;
+                }
                 if pressed > 0 {
                     let (clicked_offset, clicked_affinity) =
                         self.byte_offset_for_position(*position, window_adapter, self_rc);

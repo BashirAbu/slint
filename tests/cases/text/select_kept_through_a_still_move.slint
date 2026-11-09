@@ -1,0 +1,45 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A selection made while the pointer is down, as a select-all when a press gives the focus, stays
+// through a move that has not left the press point, as a click's own move does; a real move drags.
+export component TestCase inherits Window {
+    width: 200phx;
+    height: 100phx;
+    edit := TextInput {
+        font-family: "FixedTestFont";
+        font-size: 10px;
+        text: "Hello World";
+        changed has-focus => {
+            if self.has-focus {
+                self.select-all();
+            }
+        }
+    }
+    out property <int> test_cursor_pos: edit.cursor-position-byte-offset;
+    out property <int> test_anchor_pos: edit.anchor-position-byte-offset;
+    out property <bool> test: true;
+}
+
+/*
+```rust
+use slint::{platform::WindowEvent, platform::PointerEventButton, LogicalPosition};
+
+let instance = TestCase::new().unwrap();
+let at = LogicalPosition::new(20.0, 6.0);
+instance.window().dispatch_event(WindowEvent::PointerMoved { position: at });
+instance.window().dispatch_event(WindowEvent::PointerPressed { position: at, button: PointerEventButton::Left });
+slint_testing::mock_elapsed_time(50);
+assert_eq!((instance.get_test_anchor_pos(), instance.get_test_cursor_pos()), (0, 11));
+instance.window().dispatch_event(WindowEvent::PointerMoved { position: at });
+assert_eq!((instance.get_test_anchor_pos(), instance.get_test_cursor_pos()), (0, 11));
+instance.window().dispatch_event(WindowEvent::PointerReleased { position: at, button: PointerEventButton::Left });
+assert_eq!((instance.get_test_anchor_pos(), instance.get_test_cursor_pos()), (0, 11));
+
+slint_testing::mock_elapsed_time(1000);
+instance.window().dispatch_event(WindowEvent::PointerPressed { position: at, button: PointerEventButton::Left });
+instance.window().dispatch_event(WindowEvent::PointerMoved { position: LogicalPosition::new(50.0, 6.0) });
+instance.window().dispatch_event(WindowEvent::PointerReleased { position: LogicalPosition::new(50.0, 6.0), button: PointerEventButton::Left });
+assert_eq!((instance.get_test_anchor_pos(), instance.get_test_cursor_pos()), (2, 5));
+```
+*/
