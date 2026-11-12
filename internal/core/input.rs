@@ -2151,6 +2151,10 @@ pub(crate) struct TouchState {
     /// The finger forwarded as mouse events during single-touch.
     primary_touch_id: Option<i32>,
     gesture_state: GestureRecognitionState,
+    /// Where the finger left down after a two-finger gesture was pressed again, until it moves
+    /// past [`Self::PINCH_THRESHOLD`]. Lifted before that, it ends with an exit, not a release:
+    /// Android's own gesture detector sends no tap after a scale gesture either.
+    pressed_after_gesture: Option<LogicalPoint>,
 }
 
 impl Default for TouchState {
@@ -2159,6 +2163,7 @@ impl Default for TouchState {
             active_touches: TouchMap::default(),
             primary_touch_id: None,
             gesture_state: GestureRecognitionState::Idle,
+            pressed_after_gesture: None,
         }
     }
 }
@@ -2243,6 +2248,7 @@ impl TouchState {
         if total == 1 {
             // First finger: become primary, forward as mouse press.
             self.primary_touch_id = Some(id);
+            self.pressed_after_gesture = None;
             self.gesture_state = GestureRecognitionState::Idle;
             events.push(MouseEvent::Pressed {
                 position,
@@ -2254,14 +2260,6 @@ impl TouchState {
             // Second finger: transition Idle → TwoFingersDown.
             let finger_ids = self.active_touches.first_two_ids().unwrap_or((0, 0));
 
-            // Synthesize a Release for the primary finger to clear any
-            // Flickable grab / delay state.
-            let primary_pos = self
-                .primary_touch_id
-                .and_then(|pid| self.active_touches.get(pid))
-                .map(|tp| tp.position)
-                .unwrap_or(position);
-
             // Compute initial geometry for threshold detection.
             let (initial_distance, last_angle) =
                 self.geometry_for(finger_ids).unwrap_or((0.0, euclid::Angle::zero()));
@@ -2271,12 +2269,10 @@ impl TouchState {
                 last_angle,
             };
 
-            events.push(MouseEvent::Released {
-                position: primary_pos,
-                button: PointerEventButton::Left,
-                click_count: 0,
-                touch_finger_id: id + 1,
-            });
+            // End the primary finger's press with an exit, which clears any Flickable grab or
+            // delay state as a release does, but clicks nothing where the gesture began.
+            self.pressed_after_gesture = None;
+            events.push(MouseEvent::Exit);
         }
         // 3+ fingers: tracked in active_touches but ignored for gesture.
     }
@@ -2292,6 +2288,11 @@ impl TouchState {
         match self.gesture_state {
             GestureRecognitionState::Idle => {
                 if self.primary_touch_id == Some(id) {
+                    if self.pressed_after_gesture.is_some_and(|at| {
+                        (position - at).cast::<f32>().length() > Self::PINCH_THRESHOLD
+                    }) {
+                        self.pressed_after_gesture = None;
+                    }
                     events.push(MouseEvent::Moved { position, touch_finger_id: id + 1 });
                 }
             }
@@ -2392,12 +2393,14 @@ impl TouchState {
             GestureRecognitionState::Idle => {
                 if self.primary_touch_id == Some(id) {
                     self.primary_touch_id = None;
-                    events.push(MouseEvent::Released {
-                        position,
-                        button: PointerEventButton::Left,
-                        click_count: 0,
-                        touch_finger_id: id + 1,
-                    });
+                    if self.pressed_after_gesture.take().is_none() {
+                        events.push(MouseEvent::Released {
+                            position,
+                            button: PointerEventButton::Left,
+                            click_count: 0,
+                            touch_finger_id: id + 1,
+                        });
+                    }
                     events.push(MouseEvent::Exit);
                 }
             }
@@ -2407,6 +2410,7 @@ impl TouchState {
                     if let Some(remaining) = self.active_touches.first() {
                         let remaining_pos = remaining.position;
                         self.primary_touch_id = Some(remaining.id);
+                        self.pressed_after_gesture = Some(remaining_pos);
                         events.push(MouseEvent::Pressed {
                             position: remaining_pos,
                             button: PointerEventButton::Left,
@@ -2451,6 +2455,7 @@ impl TouchState {
                 });
 
                 if let Some((rid, rpos)) = remaining {
+                    self.pressed_after_gesture = Some(rpos);
                     events.push(MouseEvent::Pressed {
                         position: rpos,
                         button: PointerEventButton::Left,
@@ -2661,9 +2666,9 @@ mod touch_tests {
         let evs = state.process(1, pt(100.0, 200.0), TouchPhase::Started);
         assert_eq!(classify(&evs), vec![Ev::Pressed(100.0, 200.0)]);
 
-        // Finger 2 down → synthesized release for finger 1.
+        // Finger 2 down → finger 1's press ends with an exit, which clicks nothing.
         let evs = state.process(2, pt(200.0, 200.0), TouchPhase::Started);
-        assert_eq!(classify(&evs), vec![Ev::Released(100.0, 200.0)]);
+        assert_eq!(classify(&evs), vec![Ev::Exit]);
         assert!(matches!(state.gesture_state, GestureRecognitionState::TwoFingersDown { .. }));
 
         // Move finger 2 far enough to trigger pinch (> 8px threshold).
@@ -2719,7 +2724,9 @@ mod touch_tests {
         state.process(2, pt(120.0, 0.0), TouchPhase::Moved);
         let mut scale = 1.0f32;
         for x in [150.0, 180.0, 240.0] {
-            if let Ev::PinchMoved(delta) = classify(&state.process(2, pt(x, 0.0), TouchPhase::Moved))[0] {
+            if let Ev::PinchMoved(delta) =
+                classify(&state.process(2, pt(x, 0.0), TouchPhase::Moved))[0]
+            {
                 scale *= 1.0 + delta;
             }
         }
@@ -2802,6 +2809,32 @@ mod touch_tests {
         assert_eq!(classified, vec![Ev::PinchEnded, Ev::RotationEnded, Ev::Pressed(0.0, 0.0)]);
         assert!(matches!(state.gesture_state, GestureRecognitionState::Idle));
         assert_eq!(state.primary_touch_id, Some(1));
+    }
+
+    #[test]
+    fn the_finger_left_after_a_pinch_clicks_nothing_when_lifted_still_and_releases_once_moved() {
+        let pinched = || {
+            let mut state = TouchState::default();
+            state.process(1, pt(0.0, 0.0), TouchPhase::Started);
+            state.process(2, pt(100.0, 0.0), TouchPhase::Started);
+            state.process(2, pt(120.0, 0.0), TouchPhase::Moved);
+            state.process(2, pt(120.0, 0.0), TouchPhase::Ended);
+            state
+        };
+        // Lifted where it was pressed again: the press ends without a release, so nothing clicks.
+        let evs = pinched().process(1, pt(2.0, 0.0), TouchPhase::Ended);
+        assert_eq!(classify(&evs), vec![Ev::Exit]);
+        // Moved on past the threshold, it pans: its lift is a release, as any drag's.
+        let mut state = pinched();
+        state.process(1, pt(30.0, 0.0), TouchPhase::Moved);
+        let evs = state.process(1, pt(30.0, 0.0), TouchPhase::Ended);
+        assert_eq!(classify(&evs), vec![Ev::Released(30.0, 0.0), Ev::Exit]);
+        // A finger put down afresh taps again.
+        let mut state = pinched();
+        state.process(1, pt(2.0, 0.0), TouchPhase::Ended);
+        state.process(3, pt(50.0, 50.0), TouchPhase::Started);
+        let evs = state.process(3, pt(50.0, 50.0), TouchPhase::Ended);
+        assert_eq!(classify(&evs), vec![Ev::Released(50.0, 50.0), Ev::Exit]);
     }
 
     #[test]
