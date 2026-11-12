@@ -62,6 +62,12 @@ impl WasmInputHelper {
         style.set_property("width", &format!("{}px", canvas.offset_width())).unwrap();
         style.set_property("height", &format!("{}px", canvas.offset_height())).unwrap();
         style.set_property("opacity", "0").unwrap(); // Hide the cursor on mobile Safari
+        // The canvas's size is the input's whole box: a browser's default padding and border
+        // would make the page wider and taller than the canvas, and a phone could pan it sideways.
+        style.set_property("box-sizing", "border-box").unwrap();
+        style.set_property("padding", "0").unwrap();
+        style.set_property("border", "0").unwrap();
+        style.set_property("margin", "0").unwrap();
         input.set_attribute("autocapitalize", "none").unwrap(); // Otherwise everything would be capitalized as we need to clear the input
         canvas.before_with_node_1(&input).unwrap();
         let mut h = Self { input, canvas: canvas.clone() };
