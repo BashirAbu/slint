@@ -2338,7 +2338,11 @@ impl TouchState {
 
                     let current_scale =
                         if initial_distance > 0.0 { dist / initial_distance } else { 1.0 };
-                    let scale_delta = current_scale - last_scale;
+                    // A ratio to the last event's scale: the gesture handlers multiply each delta in
+                    // (`scale * (1 + delta)`), as the platforms' own pinch events mean it, so a
+                    // difference would compound into more than the fingers' real spread.
+                    let scale_delta =
+                        if last_scale > 0.0 { current_scale / last_scale - 1.0 } else { 0.0 };
 
                     // `.signed()` wraps to [-pi, pi] so crossing the ±180°
                     // atan2 boundary doesn't produce a full-revolution jump.
@@ -2704,6 +2708,22 @@ mod touch_tests {
         } else {
             panic!("expected PinchMoved, got {:?}", classified[0]);
         }
+    }
+
+    #[test]
+    fn pinch_deltas_multiplied_in_give_the_fingers_spread() {
+        let mut state = TouchState::default();
+        state.process(1, pt(0.0, 0.0), TouchPhase::Started);
+        state.process(2, pt(100.0, 0.0), TouchPhase::Started);
+        // Past the threshold: pinching starts from a distance of 120.
+        state.process(2, pt(120.0, 0.0), TouchPhase::Moved);
+        let mut scale = 1.0f32;
+        for x in [150.0, 180.0, 240.0] {
+            if let Ev::PinchMoved(delta) = classify(&state.process(2, pt(x, 0.0), TouchPhase::Moved))[0] {
+                scale *= 1.0 + delta;
+            }
+        }
+        assert!((scale - 2.0).abs() < 0.01, "expected 240 / 120 = 2, got {scale}");
     }
 
     #[test]
