@@ -189,5 +189,70 @@ pub fn render_stroked_path<T: TargetPixel>(
         })
         .miter_limit(stroke_miter_limit);
     let style = Style::Stroke(stroke);
-    render_path_with_style(commands, path_geometry, clip_geometry, color, style, buffer);
+    let commands = with_dots(commands);
+    render_path_with_style(&commands, path_geometry, clip_geometry, color, style, buffer);
+}
+
+/// zeno drops a line shorter than 0.01 px, so a subpath of no length draws nothing.
+/// SVG draws such a subpath's caps, a dot with round caps:
+/// its end moves 0.02 px, which zeno keeps and no one sees.
+fn with_dots(commands: &[Command]) -> Vec<Command> {
+    const NUDGE: f32 = 0.02;
+    let mut out = Vec::with_capacity(commands.len() + 1);
+    // The subpath's start, and whether it has a line yet, and one longer than zeno keeps.
+    let (mut start, mut lined, mut drawn) = (zeno::Point::new(0., 0.), false, false);
+    let mut at = start;
+    let end = |out: &mut Vec<Command>, start: zeno::Point, lined: bool, drawn: bool| {
+        if lined && !drawn {
+            out.push(Command::LineTo(zeno::Point::new(start.x + NUDGE, start.y)));
+        }
+    };
+    for &command in commands {
+        match command {
+            Command::MoveTo(to) => {
+                end(&mut out, start, lined, drawn);
+                (start, at, lined, drawn) = (to, to, false, false);
+            }
+            Command::LineTo(to) => {
+                lined = true;
+                drawn |= (to.x - at.x).abs() > NUDGE / 2. || (to.y - at.y).abs() > NUDGE / 2.;
+                at = to;
+            }
+            Command::Close => {
+                end(&mut out, start, lined, drawn);
+                (at, lined, drawn) = (start, false, false);
+            }
+            Command::CurveTo(_, _, to) | Command::QuadTo(_, to) => {
+                (at, drawn) = (to, true);
+            }
+        }
+        out.push(command);
+    }
+    end(&mut out, start, lined, drawn);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn coverage(commands: &[Command], (x, y): (usize, usize)) -> u8 {
+        let mut stroke = Stroke::new(6.);
+        stroke.cap(Cap::Round);
+        let mut mask = vec![0u8; 20 * 20];
+        let commands = with_dots(commands);
+        Mask::new(&commands).size(20, 20).style(Style::Stroke(stroke)).render_into(&mut mask, None);
+        mask[y * 20 + x]
+    }
+
+    #[test]
+    fn a_subpath_of_no_length_with_round_caps_draws_a_dot() {
+        let point = zeno::Point::new(10., 10.);
+        let dot = [Command::MoveTo(point), Command::LineTo(point)];
+        assert!(coverage(&dot, (10, 10)) > 200, "the dot's middle");
+        assert!(coverage(&dot, (12, 10)) > 0, "within its radius");
+        assert_eq!(coverage(&dot, (16, 10)), 0, "past its radius");
+        // A lone move draws nothing, as in SVG.
+        assert_eq!(coverage(&[Command::MoveTo(point)], (10, 10)), 0);
+    }
 }
