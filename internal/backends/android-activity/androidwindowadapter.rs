@@ -401,6 +401,22 @@ impl AndroidWindowAdapter {
                             drop(lp);
 
                             for p in motion_event.pointers() {
+                                // Android batches the samples between two frames into one event's
+                                // history: each goes first, oldest first, so a fast stroke keeps
+                                // its points (DFTR_CHANGES.md).
+                                #[cfg(feature = "aa-06")]
+                                for h in p.history() {
+                                    let position = i_slint_core::lengths::logical_point_from_api(
+                                        pointer_logical_position(h.x(), h.y(), offset, scale),
+                                    );
+                                    self.window.dispatch_event(WindowEvent::internal(
+                                        InternalEvent::Touch {
+                                            id: p.pointer_id(),
+                                            position,
+                                            phase: TouchPhase::Moved,
+                                        },
+                                    ));
+                                }
                                 self.window.dispatch_event(WindowEvent::internal(
                                     InternalEvent::Touch {
                                         id: p.pointer_id(),
