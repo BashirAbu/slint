@@ -1,0 +1,61 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// The ids are not `phone`, `email` or `url`: an element id is looked up before an enum value, so
+// `email := TextInput { input-type: email; }` would bind the element itself.
+export component TestCase inherits Window {
+    width: 400phx;
+    height: 300phx;
+
+    phone-box := TextInput {
+        y: 0phx;
+        height: 100phx;
+        width: parent.width;
+        input-type: phone;
+    }
+
+    email-box := TextInput {
+        y: 100phx;
+        height: 100phx;
+        width: parent.width;
+        input-type: email;
+    }
+
+    url-box := TextInput {
+        y: 200phx;
+        height: 100phx;
+        width: parent.width;
+        input-type: url;
+    }
+
+    out property <string> phone_text: phone-box.text;
+    out property <string> email_text: email-box.text;
+    out property <string> url_text: url-box.text;
+}
+
+/*
+```rust
+use slint::private_unstable_api::re_exports::{InputMethodRequest, InputType};
+
+let instance = TestCase::new().unwrap();
+let typed = [
+    (50., InputType::Phone, "+218 (91) 234-5678;ext=1"),
+    (150., InputType::Email, "Dftr+Test@Example.com"),
+    (250., InputType::Url, "https://example.com/a?b=c#d"),
+];
+for (y, input_type, text) in typed {
+    slint_testing::access_testing_window(instance.window(), |window| window.ime_requests.take());
+    slint_testing::send_mouse_click(&instance, 150., y);
+    let asked = slint_testing::access_testing_window(instance.window(), |window| window.ime_requests.take());
+    assert!(
+        asked.iter().any(|r| matches!(r, InputMethodRequest::Enable(props) if props.input_type == input_type)),
+        "{input_type:?}: the input method is told the box's type"
+    );
+    slint_testing::send_keyboard_string_sequence(&instance, text);
+}
+// Nothing typed is filtered, as for text: each box holds exactly what was typed.
+assert_eq!(instance.get_phone_text(), "+218 (91) 234-5678;ext=1");
+assert_eq!(instance.get_email_text(), "Dftr+Test@Example.com");
+assert_eq!(instance.get_url_text(), "https://example.com/a?b=c#d");
+```
+*/

@@ -2184,7 +2184,7 @@ impl WindowAdapterInternal for WinitWindowAdapter {
 
         #[cfg(target_arch = "wasm32")]
         match request {
-            corelib::window::InputMethodRequest::Enable(..) => {
+            corelib::window::InputMethodRequest::Enable(props) => {
                 let mut vkh = self.virtual_keyboard_helper.borrow_mut();
                 let Some(canvas) =
                     self.winit_window().and_then(|winit_window| winit_window.canvas())
@@ -2194,7 +2194,7 @@ impl WindowAdapterInternal for WinitWindowAdapter {
                 let h = vkh.get_or_insert_with(|| {
                     super::wasm_input_helper::WasmInputHelper::new(self.self_weak.clone(), canvas)
                 });
-                h.show();
+                h.show(props.input_type);
             }
             corelib::window::InputMethodRequest::Disable => {
                 if let Some(h) = &*self.virtual_keyboard_helper.borrow() {

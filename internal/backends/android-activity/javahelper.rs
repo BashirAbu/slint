@@ -249,6 +249,21 @@ bind_java_type! {
             sig = jint,
             get = TYPE_TEXT_FLAG_AUTO_COMPLETE,
         },
+        #[allow(non_snake_case)]
+        static TYPE_CLASS_PHONE {
+            sig = jint,
+            get = TYPE_CLASS_PHONE,
+        },
+        #[allow(non_snake_case)]
+        static TYPE_TEXT_VARIATION_EMAIL_ADDRESS {
+            sig = jint,
+            get = TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+        },
+        #[allow(non_snake_case)]
+        static TYPE_TEXT_VARIATION_URI {
+            sig = jint,
+            get = TYPE_TEXT_VARIATION_URI,
+        },
     }
 }
 
@@ -459,6 +474,15 @@ impl JavaHelper {
                 InputType::Decimal => {
                     AndroidInputType::TYPE_CLASS_NUMBER(env)?
                         | AndroidInputType::TYPE_NUMBER_FLAG_DECIMAL(env)?
+                }
+                InputType::Phone => AndroidInputType::TYPE_CLASS_PHONE(env)?,
+                InputType::Email => {
+                    AndroidInputType::TYPE_TEXT_VARIATION_EMAIL_ADDRESS(env)?
+                        | AndroidInputType::TYPE_CLASS_TEXT(env)?
+                }
+                InputType::Url => {
+                    AndroidInputType::TYPE_TEXT_VARIATION_URI(env)?
+                        | AndroidInputType::TYPE_CLASS_TEXT(env)?
                 }
                 _ => 0 as jint,
             };

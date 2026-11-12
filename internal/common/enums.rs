@@ -356,6 +356,15 @@ macro_rules! for_each_enums {
                 /// but assistive technologies are informed that the field is used for searching or
                 /// filtering content.
                 Search,
+                /// A phone number: characters are rendered and accepted as typed, and a virtual
+                /// keyboard shows its dial pad.
+                Phone,
+                /// An email address: characters are rendered and accepted as typed, and a virtual
+                /// keyboard shows its email layout, with `@`.
+                Email,
+                /// A web address: characters are rendered and accepted as typed, and a virtual
+                /// keyboard shows its address layout, with `/` and `.`.
+                Url,
             }
 
             /// Enum representing the `alignment` property of a

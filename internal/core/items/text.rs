@@ -2503,7 +2503,12 @@ impl TextInput {
                 }
                 return string_to_float(&candidate).is_some();
             }
-            InputType::Password | InputType::Text | InputType::Search => (),
+            InputType::Password
+            | InputType::Text
+            | InputType::Search
+            | InputType::Phone
+            | InputType::Email
+            | InputType::Url => (),
         }
 
         true

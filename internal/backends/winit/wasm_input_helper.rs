@@ -270,7 +270,24 @@ impl WasmInputHelper {
         self.input.matches(":focus").unwrap_or(false)
     }
 
-    pub fn show(&self) {
+    /// Shows the hidden input with the focus, asking a phone's browser for the keyboard of
+    /// `input_type` through `inputmode`. Never `type=email` or `type=url`: the browser would check
+    /// and clean what is typed.
+    pub fn show(&self, input_type: i_slint_core::items::InputType) {
+        use i_slint_core::items::InputType;
+        let mode = match input_type {
+            InputType::Phone => Some("tel"),
+            InputType::Email => Some("email"),
+            InputType::Url => Some("url"),
+            InputType::Number => Some("numeric"),
+            InputType::Decimal => Some("decimal"),
+            InputType::Search => Some("search"),
+            _ => None,
+        };
+        match mode {
+            Some(mode) => self.input.set_attribute("inputmode", mode).unwrap(),
+            None => self.input.remove_attribute("inputmode").unwrap(),
+        }
         self.input.style().set_property("visibility", "visible").unwrap();
         self.input.focus().unwrap();
     }
