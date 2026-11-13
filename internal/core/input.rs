@@ -1731,7 +1731,9 @@ pub fn process_mouse_input(
         result.drop_target =
             accepted.then(|| result.item_stack.last().map(|(w, _)| w.clone())).flatten();
     }
+    // An exit ends the press a Flickable holds back: delivered later, it would grab with no release.
     if mouse_input_state.delayed.is_some()
+        && !matches!(mouse_event, MouseEvent::Exit)
         && (!accepted
             || Option::zip(result.item_stack.last(), mouse_input_state.item_stack.last())
                 .is_none_or(|(a, b)| a.0 != b.0))
@@ -2269,8 +2271,8 @@ impl TouchState {
                 last_angle,
             };
 
-            // End the primary finger's press with an exit, which clears any Flickable grab or
-            // delay state as a release does, but clicks nothing where the gesture began.
+            // End the primary finger's press with an exit, which clears any Flickable grab and
+            // held-back press as a release does, but clicks nothing where the gesture began.
             self.pressed_after_gesture = None;
             events.push(MouseEvent::Exit);
         }

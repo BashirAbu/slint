@@ -1,0 +1,68 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A two-finger pinch over a TouchArea inside a Flickable clicks nothing: not where the first
+// finger went down, nor where the last finger is lifted. The press the Flickable holds back
+// is dropped, so no grab is left to steal the next tap from what lies on top.
+
+export component TestCase inherits Window {
+    width: 500phx;
+    height: 500phx;
+
+    Flickable {
+        viewport-width: 1000phx;
+        viewport-height: 1000phx;
+        area := TouchArea {
+            width: 1000phx;
+            height: 1000phx;
+            clicked => {
+                root.area-clicks += 1;
+            }
+        }
+    }
+
+    TouchArea {
+        x: 300phx;
+        y: 300phx;
+        width: 100phx;
+        height: 100phx;
+        clicked => {
+            root.overlay-clicks += 1;
+        }
+    }
+
+    out property <bool> area-pressed: area.pressed;
+    in-out property <int> area-clicks;
+    in-out property <int> overlay-clicks;
+}
+
+/*
+
+```rust
+use slint::{platform::WindowEvent, platform::PointerEventButton, LogicalPosition};
+use slint_testing::{InternalEvent, LogicalPoint, TouchPhase};
+let instance = TestCase::new().unwrap();
+let touch = |id: i32, x: f32, phase: TouchPhase| {
+    instance.window().dispatch_event(WindowEvent::internal(InternalEvent::Touch { id, position: LogicalPoint::new(x, 100.0), phase }));
+};
+
+// Two fingers spread apart, then lifted one after the other, the last without moving.
+touch(1, 100.0, TouchPhase::Started);
+touch(2, 200.0, TouchPhase::Started);
+touch(2, 260.0, TouchPhase::Moved);
+touch(2, 260.0, TouchPhase::Ended);
+touch(1, 100.0, TouchPhase::Ended);
+// Past the Flickable's delay before it forwards a press.
+slint_testing::mock_elapsed_time(500);
+assert_eq!(instance.get_area_clicks(), 0);
+assert!(!instance.get_area_pressed());
+
+// A tap on what lies on top reaches it, and nothing below.
+instance.window().dispatch_event(WindowEvent::PointerPressed { position: LogicalPosition::new(350.0, 350.0), button: PointerEventButton::Left });
+slint_testing::mock_elapsed_time(50);
+instance.window().dispatch_event(WindowEvent::PointerReleased { position: LogicalPosition::new(350.0, 350.0), button: PointerEventButton::Left });
+assert_eq!(instance.get_overlay_clicks(), 1);
+assert_eq!(instance.get_area_clicks(), 0);
+```
+
+*/
