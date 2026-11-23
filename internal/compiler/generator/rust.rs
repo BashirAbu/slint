@@ -222,10 +222,14 @@ pub fn generate(
     let sub_compos = llr
         .used_sub_components
         .iter()
-        .map(|sub_compo| generate_sub_component(*sub_compo, &llr, None, None, false))
+        .map(|sub_compo| {
+            let code = generate_sub_component(*sub_compo, &llr, None, None, false);
+            in_own_module(&inner_component_id(&llr.sub_components[*sub_compo]), code)
+        })
         .collect::<Vec<_>>();
-    let public_components =
-        llr.public_components.iter().map(|p| generate_public_component(p, &llr, compiler_config));
+    let public_components = llr.public_components.iter().map(|p| {
+        in_own_module(&ident(&p.name), generate_public_component(p, &llr, compiler_config))
+    });
 
     let popup_menu =
         llr.popup_menu.as_ref().map(|p| generate_item_tree(&p.item_tree, &llr, None, None, true));
@@ -294,6 +298,7 @@ pub(super) fn generate_module_header() -> TokenStream {
         #![allow(unused_braces, unused_parens, dead_code)]
         #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
         #![allow(unknown_lints, if_let_rescope, tail_expr_drop_order)] // We don't have fancy Drop
+        #![allow(private_interfaces, private_bounds)] // in_own_module's methods name private types
 
         use slint::private_unstable_api::re_exports as sp;
         #[allow(unused_imports)]
@@ -3142,6 +3147,92 @@ fn generate_repeated_component(
 }
 
 /// Return an identifier suitable for this component for internal use
+/// Keeps a component's definitions in the generated module, where every component reaches their
+/// private fields, and moves its impls into a module of its own, their methods made `pub(crate)`.
+/// rustc builds each module into codegen units of its own, so an edit to one component
+/// recompiles that component's code alone in an incremental build, not the whole document's.
+fn in_own_module(name: &Ident, code: TokenStream) -> TokenStream {
+    let module = format_ident!("m_{}", name);
+    let (impls, definitions): (Vec<_>, Vec<_>) =
+        split_items(code).into_iter().partition(|item| item_keywords(item).0 == "impl");
+    let definitions = definitions.into_iter().map(TokenStream::from_iter);
+    let impls = impls.into_iter().map(|item| TokenStream::from_iter(public_methods(item)));
+    quote!(#(#definitions)* mod #module { #[allow(unused_imports)] use super::*; #(#impls)* })
+}
+
+/// Splits a run of items: one ends at a `;`, or at its braces unless it is a `const`, `static`,
+/// `type` or `use`, whose braces are an expression followed by the `;`.
+fn split_items(code: TokenStream) -> Vec<Vec<TokenTree>> {
+    let mut items = vec![];
+    let mut item = vec![];
+    for token in code {
+        let ends = match &token {
+            TokenTree::Punct(p) => p.as_char() == ';',
+            TokenTree::Group(g) => {
+                g.delimiter() == proc_macro2::Delimiter::Brace
+                    && !matches!(
+                        item_keywords(&item),
+                        ("static" | "type" | "use", _) | ("const", Some(false))
+                    )
+            }
+            _ => false,
+        };
+        item.push(token);
+        if ends {
+            items.push(std::mem::take(&mut item));
+        }
+    }
+    items.extend((!item.is_empty()).then_some(item));
+    items
+}
+
+/// The position after an item's attributes, and whether a visibility follows it.
+fn after_attributes(item: &[TokenTree]) -> (usize, bool) {
+    let mut at = 0;
+    while matches!(&item.get(at), Some(TokenTree::Punct(p)) if p.as_char() == '#') {
+        at += 2;
+    }
+    (at, matches!(&item.get(at), Some(TokenTree::Ident(i)) if i == "pub"))
+}
+
+/// An item's keyword, past its attributes and visibility, and for a `const` whether it is a
+/// `const fn`.
+fn item_keywords(item: &[TokenTree]) -> (&'static str, Option<bool>) {
+    let (at, public) = after_attributes(item);
+    let mut words = item[at..].iter().skip(usize::from(public)).filter_map(|t| match t {
+        TokenTree::Ident(i) => Some(i.to_string()),
+        _ => None,
+    });
+    let first = match words.next().as_deref() {
+        Some("impl") => "impl",
+        Some("const") => "const",
+        Some("static") => "static",
+        Some("type") => "type",
+        Some("use") => "use",
+        _ => "",
+    };
+    let const_fn = (first == "const").then(|| words.next().as_deref() == Some("fn"));
+    (first, const_fn)
+}
+
+/// Makes the methods and constants of an inherent impl `pub(crate)`, so that the other
+/// components, in modules of their own, can call them. A trait impl is left as it is.
+fn public_methods(mut item: Vec<TokenTree>) -> Vec<TokenTree> {
+    let inherent = !item.iter().any(|t| matches!(t, TokenTree::Ident(i) if i == "for"));
+    if let (true, Some(TokenTree::Group(body))) = (inherent, item.last_mut()) {
+        let members = split_items(body.stream()).into_iter().flat_map(|mut member| {
+            if let (at, false) = after_attributes(&member) {
+                member.splice(at..at, quote!(pub(crate)));
+            }
+            member
+        });
+        let mut public = proc_macro2::Group::new(body.delimiter(), members.collect());
+        public.set_span(body.span());
+        *body = public;
+    }
+    item
+}
+
 fn inner_component_id(component: &llr::SubComponent) -> proc_macro2::Ident {
     format_ident!("Inner{}", ident(&component.name))
 }
