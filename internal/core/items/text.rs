@@ -1768,6 +1768,10 @@ impl TextInput {
 
         self.undo_items.set(Default::default());
         self.redo_items.set(Default::default());
+        // The input method's composition belonged to the replaced text.
+        // Left open, Android's focus-out commits it into the new text.
+        self.preedit_text.set(Default::default());
+        self.preedit_selection.set(Default::default());
 
         let old_cursor = self.cursor_position_byte_offset();
         let clamped_cursor = safe_grapheme_boundary_offset(old_cursor, new_text) as i32;
