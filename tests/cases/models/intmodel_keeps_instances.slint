@@ -1,0 +1,60 @@
+// Copyright © SixtyFPS GmbH <info@slint.dev>
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-Slint-Royalty-free-2.0 OR LicenseRef-Slint-Software-3.0
+
+// A `for` over a number keeps its instances when the number is evaluated again. Evaluated to the
+// same count, as a count read from a layout's width is after each layout, it creates none; to a
+// larger count it creates only the instances past the old one; to a smaller count it drops only
+// the instances past the new one. Each evaluation once replaced every instance, and a text input
+// among them lost its focus and what was being typed.
+
+export component TestCase inherits Rectangle {
+    width: 100phx;
+    height: 100phx;
+
+    in-out property <int> creation-count: 0;
+    in-out property <int> count: 2;
+    // Read by the count's binding but larger than the count, so it changes nothing.
+    in-out property <int> room: 10;
+    in-out property <length> test-height: root.preferred-height;
+
+    VerticalLayout {
+        for _ in min(root.count, root.room): Rectangle {
+            preferred-height: 10px;
+            init => {
+                creation-count += 1;
+            }
+        }
+    }
+}
+
+/*
+```rust
+let instance = TestCase::new().unwrap();
+
+assert_eq!(instance.get_test_height(), 20.);
+assert_eq!(instance.get_creation_count(), 2);
+
+// The same count again creates nothing.
+instance.set_room(11);
+slint_testing::mock_elapsed_time(16);
+assert_eq!(instance.get_test_height(), 20.);
+assert_eq!(instance.get_creation_count(), 2);
+
+// A larger count creates only the instance past the old one.
+instance.set_count(3);
+slint_testing::mock_elapsed_time(16);
+assert_eq!(instance.get_test_height(), 30.);
+assert_eq!(instance.get_creation_count(), 3);
+
+// A smaller count drops the instances past it and creates none.
+instance.set_count(1);
+slint_testing::mock_elapsed_time(16);
+assert_eq!(instance.get_test_height(), 10.);
+assert_eq!(instance.get_creation_count(), 3);
+
+instance.set_count(2);
+slint_testing::mock_elapsed_time(16);
+assert_eq!(instance.get_test_height(), 20.);
+assert_eq!(instance.get_creation_count(), 4);
+```
+*/

@@ -634,6 +634,11 @@ impl<C: RepeatedItemTree> Default for RepeaterTracker<C> {
     }
 }
 
+/// The number a `for` over a number counts to, or `None` for any other model.
+fn count_model<T>(model: &ModelRc<T>) -> Option<usize> {
+    model.0.as_ref()?.as_any().downcast_ref::<usize>().copied()
+}
+
 #[pin_project]
 pub struct Repeater<C: RepeatedItemTree>(#[pin] ModelChangeListenerContainer<RepeaterTracker<C>>);
 
@@ -671,10 +676,20 @@ impl<C: RepeatedItemTree + 'static> Repeater<C> {
             let old_model = model.get_internal();
             let m = model.get();
             if old_model != m {
-                *self.data().inner.borrow_mut() = RepeaterInner::default();
-                self.data().is_dirty.set(true);
-                let peer = self.project_ref().0.model_peer();
-                m.model_tracker().attach_peer(peer);
+                match (count_model(&old_model), count_model(&m)) {
+                    // A `for` over a number makes a new model each time the number is evaluated,
+                    // but its rows stay the numbers below it: the instances stay, and only the
+                    // rows past the smaller number come or go.
+                    (Some(old), Some(new)) if new > old => self.data().row_added(old, new - old),
+                    (Some(old), Some(new)) if new < old => self.data().row_removed(new, old - new),
+                    (Some(_), Some(_)) => {}
+                    _ => {
+                        *self.data().inner.borrow_mut() = RepeaterInner::default();
+                        self.data().is_dirty.set(true);
+                        let peer = self.project_ref().0.model_peer();
+                        m.model_tracker().attach_peer(peer);
+                    }
+                }
             }
             m
         } else {

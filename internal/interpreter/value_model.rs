@@ -25,8 +25,10 @@ impl Model for IntModel {
         &()
     }
 
+    // The count itself, as the Rust generator's `usize` model gives: the `Repeater` keeps a number
+    // model's instances when the count is evaluated again.
     fn as_any(&self) -> &dyn core::any::Any {
-        self
+        &self.0
     }
 }
 
